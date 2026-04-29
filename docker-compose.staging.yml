@@ -1,0 +1,13 @@
+services:
+  ota-api:
+    restart: unless-stopped
+  ota-worker:
+    restart: unless-stopped
+  postgres:
+    restart: unless-stopped
+  redis:
+    restart: unless-stopped
+  rabbitmq:
+    restart: unless-stopped
+  ota-console:
+    restart: unless-stopped

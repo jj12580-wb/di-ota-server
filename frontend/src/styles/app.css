@@ -1,0 +1,212 @@
+:root {
+  --bg-page: #f3f6fb;
+  --bg-panel: #ffffff;
+  --bg-hero: linear-gradient(135deg, #16355c 0%, #2563a9 45%, #2f8ab8 100%);
+  --text-main: #0f172a;
+  --text-muted: #5b6476;
+  --border-soft: #e7ecf3;
+  --shadow-soft: 0 10px 30px rgba(7, 18, 40, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--text-main);
+  background:
+    radial-gradient(circle at 12% 12%, rgba(38, 114, 183, 0.12), transparent 36%),
+    radial-gradient(circle at 88% 8%, rgba(13, 65, 123, 0.1), transparent 40%),
+    var(--bg-page);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.ota-shell .ant-layout-sider {
+  border-right: 1px solid var(--border-soft);
+  box-shadow: 4px 0 20px rgba(15, 23, 42, 0.04);
+}
+
+.ota-brand {
+  margin: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  background: var(--bg-hero);
+  box-shadow: var(--shadow-soft);
+}
+
+.ota-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.ota-header-title {
+  min-width: 0;
+  flex: 1;
+}
+
+.ota-header-title .ant-typography {
+  margin-bottom: 0;
+}
+
+.ota-header-actions {
+  flex-shrink: 0;
+}
+
+.ota-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+.ota-page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.ota-page-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.ota-card {
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-soft);
+}
+
+.ota-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.ota-toolbar-left {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ota-toolbar-control-search {
+  width: min(280px, 100%);
+}
+
+.ota-toolbar-control-select {
+  width: min(160px, 100%);
+}
+
+.ota-muted {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ota-kpi .ant-statistic-title {
+  color: var(--text-muted);
+}
+
+.ota-login-wrap {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr;
+  background: linear-gradient(120deg, #e8f1fb 0%, #f8fbff 100%);
+}
+
+.ota-login-aside {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-hero);
+  color: #fff;
+  padding: 48px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.ota-login-aside::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.25), transparent 35%);
+}
+
+.ota-login-card-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.ota-card .ant-table-wrapper {
+  overflow-x: auto;
+}
+
+@media (max-width: 900px) {
+  .ota-shell .ant-layout-content {
+    padding: 12px !important;
+  }
+
+  .ota-page {
+    gap: 10px;
+  }
+
+  .ota-page-title {
+    font-size: 18px;
+  }
+
+  .ota-page-subtitle {
+    font-size: 12px;
+  }
+
+  .ota-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .ota-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .ota-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ota-toolbar-left {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .ota-toolbar-control-search,
+  .ota-toolbar-control-select {
+    width: 100%;
+  }
+
+  .ota-login-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .ota-login-aside {
+    min-height: 180px;
+    padding: 24px;
+    align-items: center;
+  }
+}

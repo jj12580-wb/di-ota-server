@@ -1,0 +1,55 @@
+{
+  "realm": "ota-dev",
+  "enabled": true,
+  "displayName": "OTA Dev Realm (DEV ONLY - DO NOT USE IN PROD)",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "clients": [
+    {
+      "clientId": "ota-console",
+      "name": "OTA Console",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "ota-dev-client-secret",
+      "redirectUris": [
+        "http://localhost:8080/api/v1/auth/sso/callback",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:8080"
+      ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "dev-admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "Admin",
+      "email": "dev-admin@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Admin@123456",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "offline_access",
+        "uma_authorization"
+      ]
+    }
+  ]
+}

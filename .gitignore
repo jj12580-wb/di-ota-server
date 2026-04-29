@@ -1,0 +1,20 @@
+# env
+.env
+
+# backend
+backend/bin/
+backend/vendor/
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+
+# editor
+.vscode/
+.DS_Store
+
+# local assistant config
+.claude/settings.local.json
+
+# frontend build cache
+frontend/*.tsbuildinfo
