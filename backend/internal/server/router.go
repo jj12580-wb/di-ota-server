@@ -28,6 +28,13 @@ import (
 	"ota-server/backend/internal/store"
 )
 
+var allowedUserRoles = map[string]struct{}{
+	"admin":    {},
+	"release":  {},
+	"readonly": {},
+	"audit":    {},
+}
+
 var taskStateTransition = map[string]map[string]string{
 	"start": {
 		"Draft": "Running",
@@ -164,6 +171,299 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"access_token": token, "token_type": "Bearer", "mode": providerMode}})
 			})
 		}
+
+		api.GET("/users", func(c *gin.Context) {
+			if !hasBearer(c.GetHeader("Authorization")) {
+				c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "unauthorized"})
+				return
+			}
+
+			limit := 20
+			offset := 0
+			if l := c.Query("limit"); l != "" {
+				if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 100 {
+					limit = n
+				}
+			}
+			if o := c.Query("offset"); o != "" {
+				if n, err := strconv.Atoi(o); err == nil && n >= 0 {
+					offset = n
+				}
+			}
+
+			search := strings.TrimSpace(c.Query("search"))
+			status := normalizeUserStatus(c.Query("status"))
+			role := strings.ToLower(strings.TrimSpace(c.Query("role")))
+			if role != "" {
+				if _, ok := allowedUserRoles[role]; !ok {
+					c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid role"})
+					return
+				}
+			}
+
+			users, err := q.ListUsers(c.Request.Context(), store.ListUsersParams{
+				Limit:  int32(limit),
+				Offset: int32(offset),
+				Search: search,
+				Status: status,
+				Role:   role,
+			})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "query users failed"})
+				return
+			}
+			count, err := q.CountUsers(c.Request.Context(), search, status, role)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "count users failed"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"users": users, "total": count}})
+		})
+
+		api.GET("/users/:user_id", func(c *gin.Context) {
+			if !hasBearer(c.GetHeader("Authorization")) {
+				c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "unauthorized"})
+				return
+			}
+			userID := strings.TrimSpace(c.Param("user_id"))
+			if userID == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "user_id is required"})
+				return
+			}
+
+			user, err := q.GetUserByID(c.Request.Context(), userID)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					c.JSON(http.StatusNotFound, gin.H{"code": 2010, "message": "user not found"})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "query user failed"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": user})
+		})
+
+		api.POST("/users", func(c *gin.Context) {
+			operator, ok := operatorFromBearer(c.GetHeader("Authorization"), cfg)
+			if !ok {
+				c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "unauthorized"})
+				return
+			}
+
+			var req struct {
+				Username    string   `json:"username"`
+				DisplayName string   `json:"display_name"`
+				Password    string   `json:"password"`
+				Status      string   `json:"status"`
+				AuthSource  string   `json:"auth_source"`
+				Roles       []string `json:"roles"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid request"})
+				return
+			}
+
+			username := strings.TrimSpace(req.Username)
+			if username == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "username is required"})
+				return
+			}
+			displayName := strings.TrimSpace(req.DisplayName)
+			if displayName == "" {
+				displayName = username
+			}
+			status := normalizeUserStatus(req.Status)
+			if status == "" {
+				status = "enabled"
+			}
+			authSource := normalizeAuthSource(req.AuthSource)
+			if authSource == "" {
+				authSource = "local"
+			}
+			roles, err := sanitizeUserRoles(req.Roles)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": err.Error()})
+				return
+			}
+			passwordHash := ""
+			if authSource == "local" {
+				password := strings.TrimSpace(req.Password)
+				if password == "" {
+					c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "password is required for local users"})
+					return
+				}
+				hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "hash password failed"})
+					return
+				}
+				passwordHash = string(hash)
+			}
+
+			user, err := q.CreateUser(c.Request.Context(), store.CreateUserParams{
+				UserID:       "user-" + uuid.NewString(),
+				Username:     username,
+				DisplayName:  displayName,
+				PasswordHash: passwordHash,
+				Status:       status,
+				AuthSource:   authSource,
+			})
+			if err != nil {
+				if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+					c.JSON(http.StatusConflict, gin.H{"code": 2011, "message": "username already exists"})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "create user failed"})
+				return
+			}
+			if err := q.ReplaceUserRoles(c.Request.Context(), user.UserID, roles); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "assign user roles failed"})
+				return
+			}
+			user, err = q.GetUserByID(c.Request.Context(), user.UserID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "reload user failed"})
+				return
+			}
+			writeUserAudit(c.Request.Context(), q, operator, "USER_CREATE", user.UserID, nil, user)
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": user})
+		})
+
+		api.PATCH("/users/:user_id/status", func(c *gin.Context) {
+			operator, ok := operatorFromBearer(c.GetHeader("Authorization"), cfg)
+			if !ok {
+				c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "unauthorized"})
+				return
+			}
+			userID := strings.TrimSpace(c.Param("user_id"))
+			if userID == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "user_id is required"})
+				return
+			}
+			var req struct {
+				Status string `json:"status"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid request"})
+				return
+			}
+			status := normalizeUserStatus(req.Status)
+			if status == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "status must be enabled or disabled"})
+				return
+			}
+			beforeUser, err := q.GetUserByID(c.Request.Context(), userID)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					c.JSON(http.StatusNotFound, gin.H{"code": 2010, "message": "user not found"})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "query user failed"})
+				return
+			}
+			user, err := q.UpdateUserStatus(c.Request.Context(), userID, status)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "update user status failed"})
+				return
+			}
+			writeUserAudit(c.Request.Context(), q, operator, "USER_STATUS_UPDATE", userID, beforeUser, user)
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": user})
+		})
+
+		api.PATCH("/users/:user_id/roles", func(c *gin.Context) {
+			operator, ok := operatorFromBearer(c.GetHeader("Authorization"), cfg)
+			if !ok {
+				c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "unauthorized"})
+				return
+			}
+			userID := strings.TrimSpace(c.Param("user_id"))
+			if userID == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "user_id is required"})
+				return
+			}
+			var req struct {
+				Roles []string `json:"roles"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid request"})
+				return
+			}
+			roles, err := sanitizeUserRoles(req.Roles)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": err.Error()})
+				return
+			}
+			beforeUser, err := q.GetUserByID(c.Request.Context(), userID)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					c.JSON(http.StatusNotFound, gin.H{"code": 2010, "message": "user not found"})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "query user failed"})
+				return
+			}
+			if err := q.ReplaceUserRoles(c.Request.Context(), userID, roles); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "update user roles failed"})
+				return
+			}
+			user, err := q.GetUserByID(c.Request.Context(), userID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "reload user failed"})
+				return
+			}
+			writeUserAudit(c.Request.Context(), q, operator, "USER_ROLE_UPDATE", userID, beforeUser, user)
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": user})
+		})
+
+		api.POST("/users/:user_id/reset-password", func(c *gin.Context) {
+			operator, ok := operatorFromBearer(c.GetHeader("Authorization"), cfg)
+			if !ok {
+				c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "unauthorized"})
+				return
+			}
+			userID := strings.TrimSpace(c.Param("user_id"))
+			if userID == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "user_id is required"})
+				return
+			}
+			var req struct {
+				Password string `json:"password"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid request"})
+				return
+			}
+			password := strings.TrimSpace(req.Password)
+			if password == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "password is required"})
+				return
+			}
+			beforeUser, err := q.GetUserByID(c.Request.Context(), userID)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					c.JSON(http.StatusNotFound, gin.H{"code": 2010, "message": "user not found"})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "query user failed"})
+				return
+			}
+			if beforeUser.AuthSource != "local" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "only local users can reset password"})
+				return
+			}
+			hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "hash password failed"})
+				return
+			}
+			user, err := q.ResetUserPassword(c.Request.Context(), userID, string(hash))
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "reset password failed"})
+				return
+			}
+			writeUserAudit(c.Request.Context(), q, operator, "USER_PASSWORD_RESET", userID, beforeUser, gin.H{"user_id": userID, "password_reset": true})
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": user})
+		})
 
 		api.GET("/packages", func(c *gin.Context) {
 			if !hasBearer(c.GetHeader("Authorization")) {
@@ -815,6 +1115,68 @@ func operatorFromBearer(header string, cfg *config.Config) (string, bool) {
 		return "unknown", true
 	}
 	return sub, true
+}
+
+func normalizeUserStatus(value string) string {
+	status := strings.ToLower(strings.TrimSpace(value))
+	if status == "enabled" || status == "disabled" {
+		return status
+	}
+	return ""
+}
+
+func normalizeAuthSource(value string) string {
+	authSource := strings.ToLower(strings.TrimSpace(value))
+	if authSource == "local" || authSource == "sso" {
+		return authSource
+	}
+	return ""
+}
+
+func sanitizeUserRoles(roles []string) ([]string, error) {
+	if len(roles) == 0 {
+		return []string{"readonly"}, nil
+	}
+	unique := make(map[string]struct{}, len(roles))
+	out := make([]string, 0, len(roles))
+	for _, role := range roles {
+		normalized := strings.ToLower(strings.TrimSpace(role))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := allowedUserRoles[normalized]; !ok {
+			return nil, fmt.Errorf("invalid role: %s", normalized)
+		}
+		if _, seen := unique[normalized]; seen {
+			continue
+		}
+		unique[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	if len(out) == 0 {
+		return []string{"readonly"}, nil
+	}
+	return out, nil
+}
+
+func writeUserAudit(ctx context.Context, q *store.Queries, operator, operationType, resourceID string, beforeState, afterState interface{}) {
+	traceID := "trace-" + uuid.NewString()
+	var beforeBytes []byte
+	var afterBytes []byte
+	if beforeState != nil {
+		beforeBytes, _ = json.Marshal(beforeState)
+	}
+	if afterState != nil {
+		afterBytes, _ = json.Marshal(afterState)
+	}
+	_, _ = q.CreateAuditLog(ctx, store.CreateAuditLogParams{
+		TraceID:       traceID,
+		Operator:      operator,
+		OperationType: operationType,
+		ResourceID:    resourceID,
+		BeforeState:   newNullRawMessage(beforeBytes),
+		AfterState:    newNullRawMessage(afterBytes),
+	})
 }
 
 func isOIDCConfigured(cfg *config.Config) bool {

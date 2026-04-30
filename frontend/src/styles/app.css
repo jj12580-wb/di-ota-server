@@ -47,17 +47,34 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-height: 64px;
+  height: auto;
+  line-height: normal;
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(8px);
 }
 
 .ota-header-title {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
 
 .ota-header-title .ant-typography {
   margin-bottom: 0;
+  line-height: 1.25;
+}
+
+.ota-header-title > .ant-typography {
+  display: block;
+  font-size: 18px;
+}
+
+.ota-header-title > div {
+  line-height: 1.2;
 }
 
 .ota-header-actions {
@@ -117,6 +134,46 @@ body {
   font-size: 12px;
 }
 
+.ota-section-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ota-section-span-4 {
+  grid-column: span 4;
+}
+
+.ota-section-span-6 {
+  grid-column: span 6;
+}
+
+.ota-section-span-8 {
+  grid-column: span 8;
+}
+
+.ota-section-span-12 {
+  grid-column: span 12;
+}
+
+.ota-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ota-list-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef4fb;
+  color: #20436f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .ota-kpi .ant-statistic-title {
   color: var(--text-muted);
 }
@@ -152,10 +209,6 @@ body {
   padding: 24px;
 }
 
-.ota-card .ant-table-wrapper {
-  overflow-x: auto;
-}
-
 @media (max-width: 900px) {
   .ota-shell .ant-layout-content {
     padding: 12px !important;
@@ -178,6 +231,7 @@ body {
     align-items: flex-start;
     padding-top: 8px;
     padding-bottom: 8px;
+    min-height: unset;
   }
 
   .ota-header-actions {
@@ -198,6 +252,17 @@ body {
   .ota-toolbar-control-search,
   .ota-toolbar-control-select {
     width: 100%;
+  }
+
+  .ota-section-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ota-section-span-4,
+  .ota-section-span-6,
+  .ota-section-span-8,
+  .ota-section-span-12 {
+    grid-column: span 1;
   }
 
   .ota-login-wrap {

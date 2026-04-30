@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Card, Col, Row, Statistic, Table, Tag, Spin, Typography } from 'antd';
+import { Alert, Card, Col, Row, Statistic, Table, Tag, Spin, Typography } from 'antd';
 import { dashboardAPI, ReleaseTask } from '../api';
+import useAuthStore from '../stores/authStore';
 
 const { Paragraph, Title } = Typography;
 
@@ -16,6 +17,7 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<ReleaseTask[]>([]);
   const [totalPackages, setTotalPackages] = useState(0);
+  const hasExternalAccess = useAuthStore((s) => s.hasExternalAccess);
 
   const load = async () => {
     try {
@@ -48,6 +50,13 @@ export function DashboardPage() {
         <Paragraph className="ota-page-subtitle">聚焦发布节奏、任务状态与包规模，支持快速巡检。</Paragraph>
       </div>
 
+      <Alert
+        type={hasExternalAccess ? 'success' : 'warning'}
+        showIcon
+        message={hasExternalAccess ? '外部系统授权可用' : '外部系统授权未接入'}
+        description={hasExternalAccess ? '看板中的外部聚合指标可正常加载。' : '涉及外部系统的指标位已预留，当前仅展示本地系统数据。'}
+      />
+
       <Row gutter={[16, 16]} className="ota-kpi">
         <Col xs={24} md={8}>
           <Card className="ota-card"><Statistic title="固件包总数" value={totalPackages} /></Card>
@@ -61,7 +70,7 @@ export function DashboardPage() {
       </Row>
 
       <Card title="最近任务" className="ota-card">
-        <Table columns={columns} dataSource={tasks.slice(0, 10)} pagination={false} rowKey="task_id" size="middle" scroll={{ x: 760 }} />
+        <Table columns={columns} dataSource={tasks.slice(0, 10)} pagination={false} rowKey="task_id" size="middle" scroll={tasks.length > 0 ? { x: 760 } : undefined} />
       </Card>
     </div>
   );

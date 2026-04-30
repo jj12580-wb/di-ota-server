@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"ota-server/backend/internal/config"
@@ -22,7 +23,13 @@ func main() {
 	defer pg.Close()
 
 	if cfg.API.AutoMigrateOnStart {
-		for _, f := range []string{"migrations/001_init.sql", "migrations/002_enhance.sql"} {
+		for _, f := range []string{
+			"migrations/001_init.sql",
+			"migrations/002_enhance.sql",
+			"migrations/002_task_stats_snapshot_idx.sql",
+			"migrations/003_task_and_package_state.sql",
+			"migrations/004_user_management.sql",
+		} {
 			if err := db.ApplySchema(pg, f); err != nil {
 				log.Fatalf("apply schema %s failed: %v", f, err)
 			}
@@ -31,6 +38,11 @@ func main() {
 	}
 
 	queries := store.New(pg)
+	if cfg.Auth.LocalAuthEnabled && cfg.Auth.LocalAdminUsername != "" && cfg.Auth.LocalAdminPassHash != "" {
+		if err := queries.EnsureBootstrapLocalAdmin(context.Background(), cfg.Auth.LocalAdminUsername, "系统管理员", cfg.Auth.LocalAdminPassHash); err != nil {
+			log.Fatalf("bootstrap local admin failed: %v", err)
+		}
+	}
 	r := server.NewRouter(cfg, queries)
 	addr := ":" + cfg.API.Port
 	log.Printf("ota-api listening on %s", addr)

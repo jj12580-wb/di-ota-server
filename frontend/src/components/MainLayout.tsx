@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Avatar, Button, Typography, Space } from 'antd';
-import { DashboardOutlined, BoxPlotOutlined, ThunderboltOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
+import { Layout, Menu, Avatar, Button, Typography, Space, Tag } from 'antd';
+import { DashboardOutlined, BoxPlotOutlined, ThunderboltOutlined, LogoutOutlined, UserOutlined, TeamOutlined, LaptopOutlined, AlertOutlined } from '@ant-design/icons';
 import useAuthStore from '../stores/authStore';
 
 const { Sider, Header, Content } = Layout;
@@ -8,12 +8,19 @@ const { Text } = Typography;
 
 const menuItems = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
+  { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
+  { key: '/devices', icon: <LaptopOutlined />, label: '设备管理' },
+  { key: '/alerts', icon: <AlertOutlined />, label: '告警中心' },
   { key: '/packages', icon: <BoxPlotOutlined />, label: '固件包' },
   { key: '/tasks', icon: <ThunderboltOutlined />, label: '发布任务' },
 ];
 
 export function MainLayout() {
   const logout = useAuthStore((s) => s.logout);
+  const username = useAuthStore((s) => s.username);
+  const roles = useAuthStore((s) => s.roles);
+  const authSource = useAuthStore((s) => s.authSource);
+  const hasExternalAccess = useAuthStore((s) => s.hasExternalAccess);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -43,8 +50,13 @@ export function MainLayout() {
             </div>
           </div>
           <Space size={12} className="ota-header-actions" wrap>
-            <Text type="secondary">管理员</Text>
+            <Space size={[8, 8]} wrap>
+              <Tag color={authSource === 'sso' ? 'cyan' : 'default'}>{authSource === 'sso' ? 'SSO 登录' : '本地登录'}</Tag>
+              <Tag color={hasExternalAccess ? 'green' : 'gold'}>{hasExternalAccess ? '外部授权已连接' : '外部授权未接入'}</Tag>
+              <Text type="secondary">{roles.join(' / ')}</Text>
+            </Space>
             <Avatar icon={<UserOutlined />} />
+            <Text>{username}</Text>
             <Button type="text" danger icon={<LogoutOutlined />} onClick={handleLogout}>
               退出
             </Button>

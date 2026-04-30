@@ -151,7 +151,7 @@ export function TasksPage() {
           <span className="ota-muted">共 {filteredTasks.length} 条</span>
         </div>
 
-        <Table columns={columns} dataSource={filteredTasks} loading={loading} rowKey="task_id" pagination={{ pageSize: 12 }} size="middle" scroll={{ x: 920 }} />
+        <Table columns={columns} dataSource={filteredTasks} loading={loading} rowKey="task_id" pagination={{ pageSize: 12 }} size="middle" scroll={filteredTasks.length > 0 ? { x: 920 } : undefined} />
 
         <Modal width="min(560px, calc(100vw - 24px))" title="新建发布任务" open={createOpen} onCancel={() => { setCreateOpen(false); form.resetFields(); }} footer={null}>
           <Form form={form} layout="vertical" onFinish={handleCreate}>

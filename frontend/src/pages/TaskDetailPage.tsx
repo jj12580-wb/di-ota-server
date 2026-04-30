@@ -118,7 +118,7 @@ export function TaskDetailPage() {
 
         {audits.length > 0 && (
           <Card title="审计日志" className="ota-card">
-            <Table columns={auditColumns} dataSource={audits} rowKey="id" pagination={false} size="small" scroll={{ x: 560 }} />
+            <Table columns={auditColumns} dataSource={audits} rowKey="id" pagination={false} size="small" scroll={audits.length > 0 ? { x: 560 } : undefined} />
           </Card>
         )}
       </Space>

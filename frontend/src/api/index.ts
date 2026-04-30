@@ -53,6 +53,28 @@ export interface AuditLog {
   created_at: string;
 }
 
+export interface User {
+  user_id: string;
+  username: string;
+  display_name: string;
+  status: 'enabled' | 'disabled';
+  auth_source: 'local' | 'sso';
+  last_login_at: string | null;
+  last_operation_at: string;
+  created_at: string;
+  updated_at: string;
+  roles: string[];
+}
+
+export interface CreateUserPayload {
+  username: string;
+  display_name: string;
+  password?: string;
+  status?: 'enabled' | 'disabled';
+  auth_source?: 'local' | 'sso';
+  roles: string[];
+}
+
 function wrap<T>(promise: Promise<{ data: APIResponse<T> }>): Promise<T> {
   return promise.then((res) => {
     if (res.data.code !== 0) {
@@ -67,6 +89,29 @@ export const authAPI = {
     wrap<{ access_token: string; token_type: string }>(
       api.post('/auth/login', { username, password })
     ),
+};
+
+export const userAPI = {
+  list: (params?: { limit?: number; offset?: number; search?: string; status?: string; role?: string }) =>
+    wrap<{ users: User[]; total: number }>(
+      api.get('/users', {
+        params: {
+          limit: params?.limit ?? 20,
+          offset: params?.offset ?? 0,
+          search: params?.search ?? '',
+          status: params?.status ?? '',
+          role: params?.role ?? '',
+        },
+      })
+    ),
+  get: (id: string) => wrap<User>(api.get(`/users/${id}`)),
+  create: (payload: CreateUserPayload) => wrap<User>(api.post('/users', payload)),
+  updateStatus: (id: string, status: 'enabled' | 'disabled') =>
+    wrap<User>(api.patch(`/users/${id}/status`, { status })),
+  updateRoles: (id: string, roles: string[]) =>
+    wrap<User>(api.patch(`/users/${id}/roles`, { roles })),
+  resetPassword: (id: string, password: string) =>
+    wrap<User>(api.post(`/users/${id}/reset-password`, { password })),
 };
 
 export const packageAPI = {

@@ -146,7 +146,7 @@ export function PackagesPage() {
           <span className="ota-muted">共 {filteredPackages.length} 条</span>
         </div>
 
-        <Table columns={columns} dataSource={filteredPackages} loading={loading} rowKey="package_id" pagination={{ pageSize: 12 }} size="middle" scroll={{ x: 880 }} />
+        <Table columns={columns} dataSource={filteredPackages} loading={loading} rowKey="package_id" pagination={{ pageSize: 12 }} size="middle" scroll={filteredPackages.length > 0 ? { x: 880 } : undefined} />
 
         <Modal width="min(560px, calc(100vw - 24px))" title="上传固件包" open={uploadOpen} onCancel={() => { setUploadOpen(false); form.resetFields(); }} footer={null}>
           <Form form={form} layout="vertical" onFinish={handleUpload}>
