@@ -1,6 +1,8 @@
-import { Breadcrumb, Button, Card, Descriptions, Space, Table, Tag, Timeline, Typography } from 'antd';
+import { Breadcrumb, Button, Card, Descriptions, Space, Table, Tag, Timeline, Typography, message, Spin } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
-import { mockDevices } from './mockConsoleData';
+import { useEffect, useState } from 'react';
+import type { DeviceSummaryItem } from './mockConsoleData';
+import { AMSDeviceItem, deviceAPI } from '../api';
 
 const { Paragraph, Title, Text } = Typography;
 
@@ -10,38 +12,76 @@ const statusColor: Record<string, string> = {
   offline: 'red',
 };
 
+function toDeviceSummaryItem(item: AMSDeviceItem): DeviceSummaryItem {
+  const isOnline = Boolean(item.is_online);
+  const isActive = item.is_active !== false;
+
+  let status: DeviceSummaryItem['status'] = isOnline ? 'online' : 'offline';
+  if (!isActive) status = 'warning';
+
+  const safe = (value: unknown, fallback = '-') => {
+    if (typeof value === 'string' && value.trim() !== '') return value.trim();
+    if (typeof value === 'number') return String(value);
+    return fallback;
+  };
+
+  return {
+    device_id: safe(item.sn, safe(item.id)),
+    product_code: safe(item.name, safe(item.mac_addr)),
+    product_model: safe(item.current_model_id),
+    hardware_version: '-',
+    current_version: safe(item.current_firmware_version),
+    target_version: '-',
+    status,
+    last_heartbeat: safe(item.last_heartbeat),
+    last_error_code: '-',
+    data_source: 'external',
+    tags: [],
+    last_task_id: '',
+  };
+}
+
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const device = mockDevices.find((item) => item.device_id === id);
+  const [messageApi, contextHolder] = message.useMessage();
+  const [loading, setLoading] = useState(false);
+  const [device, setDevice] = useState<DeviceSummaryItem | null>(null);
 
-  if (!device) {
-    return (
-      <div className="ota-page">
-        <Card className="ota-card">
-          <Space direction="vertical">
-            <Title level={4}>设备不存在</Title>
-            <Button onClick={() => navigate('/devices')}>返回设备管理</Button>
-          </Space>
-        </Card>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!id) return;
+    setLoading(true);
+    deviceAPI.list({ page: 1, page_size: 10, keyword: id })
+      .then((data) => {
+        const matched = (data.items ?? []).find((it) => it.sn === id) ?? data.items?.[0];
+        if (!matched) {
+          setDevice(null);
+          return;
+        }
+        setDevice(toDeviceSummaryItem(matched));
+      })
+      .catch((err) => {
+        messageApi.error(err instanceof Error ? err.message : '加载设备详情失败');
+        setDevice(null);
+      })
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const upgradeHistory = [
     {
       key: '1',
-      task_id: device.last_task_id,
-      from_version: device.current_version,
-      to_version: device.target_version,
-      result: device.status === 'warning' ? '异常' : '执行中',
-      reported_at: device.last_heartbeat,
+      task_id: device?.last_task_id ?? '-',
+      from_version: device?.current_version ?? '-',
+      to_version: device?.target_version ?? '-',
+      result: device?.status === 'warning' ? '异常' : '执行中',
+      reported_at: device?.last_heartbeat ?? '-',
     },
     {
       key: '2',
       task_id: 'task-0940',
       from_version: '1.1.0',
-      to_version: device.current_version,
+      to_version: device?.current_version ?? '-',
       result: '成功',
       reported_at: '2026-04-20 11:20:00',
     },
@@ -49,6 +89,7 @@ export function DeviceDetailPage() {
 
   return (
     <div className="ota-page">
+      {contextHolder}
       <div>
         <Title level={3} className="ota-page-title">设备详情</Title>
         <Paragraph className="ota-page-subtitle">先固定设备详情页的信息编排，后续再接升级历史、心跳详情和异常归因接口。</Paragraph>
@@ -57,10 +98,22 @@ export function DeviceDetailPage() {
       <Breadcrumb
         items={[
           { title: <a onClick={() => navigate('/devices')}>设备管理</a> },
-          { title: device.device_id },
+          { title: id ?? '-' },
         ]}
       />
 
+      {loading ? (
+        <Card className="ota-card">
+          <Spin />
+        </Card>
+      ) : !device ? (
+        <Card className="ota-card">
+          <Space direction="vertical">
+            <Title level={4}>设备不存在</Title>
+            <Button onClick={() => navigate('/devices')}>返回设备管理</Button>
+          </Space>
+        </Card>
+      ) : (
       <div className="ota-section-grid">
         <Card className="ota-card ota-section-span-8" title="设备概览">
           <Descriptions bordered column={{ xs: 1, sm: 2 }}>
@@ -119,6 +172,7 @@ export function DeviceDetailPage() {
           />
         </Card>
       </div>
+      )}
     </div>
   );
 }

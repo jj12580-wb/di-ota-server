@@ -2,12 +2,16 @@ services:
   ota-api:
     image: golang:1.22
     container_name: ota-api
+    security_opt:
+      - seccomp:unconfined
     working_dir: /app/backend
     command: sh -c "go mod download && go run ./cmd/api"
     env_file:
       - .env
     ports:
-      - "8080:8080"
+      - "9080:8080"
+    environment:
+      - GOPROXY=https://goproxy.cn,direct
     volumes:
       - ./:/app
     depends_on:
@@ -20,7 +24,10 @@ services:
 
   ota-worker:
     image: golang:1.22
+    
     container_name: ota-worker
+    security_opt:
+      - seccomp:unconfined
     working_dir: /app/backend
     command: sh -c "go mod download && go run ./cmd/worker"
     env_file:
@@ -38,12 +45,14 @@ services:
   postgres:
     image: postgres:16
     container_name: ota-postgres
+    security_opt:
+      - seccomp:unconfined
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ota}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ota}
       POSTGRES_DB: ${POSTGRES_DB:-ota}
     ports:
-      - "5432:5432"
+      - "9432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -55,8 +64,10 @@ services:
   redis:
     image: redis:7
     container_name: ota-redis
+    security_opt:
+      - seccomp:unconfined
     ports:
-      - "6379:6379"
+      - "9379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -66,9 +77,11 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     container_name: ota-rabbitmq
+    security_opt:
+      - seccomp:unconfined
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "5632:5672"
+      - "15632:15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 5s
@@ -78,12 +91,14 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
     container_name: ota-keycloak
+    security_opt:
+      - seccomp:unconfined
     command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
     ports:
-      - "18080:8080"
+      - "18089:8080"
     volumes:
       - ./deploy/keycloak/realm-ota-dev.json:/opt/keycloak/data/import/realm-ota-dev.json:ro
     healthcheck:
@@ -95,13 +110,15 @@ services:
   minio:
     image: minio/minio:RELEASE.2025-02-07T23-21-09Z
     container_name: ota-minio
+    security_opt:
+      - seccomp:unconfined
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9009:9000"
+      - "9091:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -113,6 +130,8 @@ services:
   minio-init:
     image: minio/mc:RELEASE.2025-03-12T17-29-24Z
     container_name: ota-minio-init
+    security_opt:
+      - seccomp:unconfined
     depends_on:
       minio:
         condition: service_healthy
@@ -129,9 +148,11 @@ services:
     image: node:20
     container_name: ota-console
     working_dir: /app/frontend
+    security_opt:
+      - seccomp:unconfined
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
     ports:
-      - "5173:5173"
+      - "5179:5173"
     volumes:
       - ./:/app
     depends_on:

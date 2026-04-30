@@ -75,6 +75,47 @@ export interface CreateUserPayload {
   roles: string[];
 }
 
+export interface AMSDeviceItem {
+  id: number;
+  sn: string;
+  name: string;
+  is_active: boolean;
+  is_online: boolean;
+  last_heartbeat: string | null;
+  current_firmware_version: string | null;
+  current_model_id: number | null;
+  mac_addr: string | null;
+  location: string | null;
+  owner_name: string | null;
+  owner_phone: string | null;
+  background_image_url?: string | null;
+  [key: string]: unknown;
+}
+
+export interface AMSDeviceListResponse {
+  items: AMSDeviceItem[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
+export interface AMSPlatform {
+  id: number;
+  name: string;
+  code?: string;
+  is_active?: boolean;
+  [key: string]: unknown;
+}
+
+export interface AMSOrganization {
+  id: number;
+  name: string;
+  code?: string;
+  platform_id?: number;
+  is_active?: boolean;
+  [key: string]: unknown;
+}
+
 function wrap<T>(promise: Promise<{ data: APIResponse<T> }>): Promise<T> {
   return promise.then((res) => {
     if (res.data.code !== 0) {
@@ -156,6 +197,31 @@ export const taskAPI = {
       api.post(`/release-tasks/${id}/actions`, { action, reason })
     ),
   audits: (id: string) => wrap<AuditLog[]>(api.get(`/release-tasks/${id}/audits`)),
+};
+
+export const deviceAPI = {
+  list: (params?: { page?: number; page_size?: number; keyword?: string; search?: string; platform_id?: number; org_id?: number }) =>
+    wrap<AMSDeviceListResponse>(
+      api.get('/devices', {
+        params: {
+          page: params?.page ?? 1,
+          page_size: params?.page_size ?? 10,
+          keyword: params?.keyword ?? '',
+          platform_id: params?.platform_id,
+          org_id: params?.org_id,
+          // legacy
+          search: params?.search ?? '',
+        },
+      })
+    ),
+};
+
+export const platformAPI = {
+  list: () => wrap<AMSPlatform[]>(api.get('/platforms')),
+};
+
+export const organizationAPI = {
+  list: () => wrap<AMSOrganization[]>(api.get('/organizations')),
 };
 
 export const dashboardAPI = {

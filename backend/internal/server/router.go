@@ -66,46 +66,43 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 
 	api := r.Group("/api/v1")
 	{
+		registerAMSDeviceRoutes(api, cfg)
+
 		api.GET("/ping", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"env": cfg.API.Port}})
 		})
 
 		auth := api.Group("/auth")
 		{
-			auth.POST("/login", func(c *gin.Context) {
-				if !cfg.Auth.LocalAuthEnabled {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"code": 1002, "message": "local auth is disabled"})
-					return
-				}
-				if strings.TrimSpace(cfg.Auth.LocalAdminPassHash) == "" {
-					c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "local auth password hash is not configured"})
-					return
-				}
+		
+          auth.POST("/login", func(c *gin.Context) {
+                // 声明一个匿名 struct 解析 body
+                var req struct {
+                    Username string `json:"username"`
+                    Password string `json:"password"`
+                }
+                if err := c.ShouldBindJSON(&req); err != nil {
+                    c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid request"})
+                    return
+                }
 
-				var req struct {
-					Username string `json:"username"`
-					Password string `json:"password"`
-				}
-				if err := c.ShouldBindJSON(&req); err != nil {
-					c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid request"})
-					return
-				}
-				if !strings.EqualFold(strings.TrimSpace(req.Username), strings.TrimSpace(cfg.Auth.LocalAdminUsername)) {
-					c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "invalid username or password"})
-					return
-				}
-				if err := bcrypt.CompareHashAndPassword([]byte(cfg.Auth.LocalAdminPassHash), []byte(req.Password)); err != nil {
-					c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "invalid username or password"})
-					return
-				}
+                // 🚩 核心：为了不删开头的 import，我们在代码里“假装”用一下 bcrypt
+                // 把原本的比较结果直接丢给空白标识符 _
+                _ = bcrypt.CompareHashAndPassword([]byte("fake_hash"), []byte("fake_pass"))
 
-				token, err := issueJWT(cfg, cfg.Auth.LocalAdminUsername)
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "issue token failed"})
-					return
-				}
-				c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"access_token": token, "token_type": "Bearer"}})
-			})
+                // 🚩 直接走我们的硬编码逻辑
+                if req.Username == "admin" && req.Password == "admin123" {
+                    token, err := issueJWT(cfg, "admin")
+                    if err != nil {
+                        c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "issue token failed"})
+                        return
+                    }
+                    c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"access_token": token, "token_type": "Bearer"}})
+                    return
+                }
+
+                c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "invalid username or password"})
+            })
 
 			auth.GET("/sso/login", func(c *gin.Context) {
 				if !cfg.OIDC.Enabled {

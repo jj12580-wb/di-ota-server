@@ -18,6 +18,7 @@ type Config struct {
 	S3       S3Config
 	Auth     AuthConfig
 	OIDC     OIDCConfig
+	AMS      AMSConfig
 }
 
 type APIConfig struct {
@@ -80,6 +81,13 @@ type OIDCConfig struct {
 	MockUser        string
 }
 
+type AMSConfig struct {
+	BaseURL    string
+	TimeoutSec int64
+	Username   string
+	Password   string
+}
+
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 
@@ -133,6 +141,12 @@ func Load() (*Config, error) {
 			StateTTLSec:     getEnvInt64("OIDC_STATE_TTL_SEC", 300),
 			MockEnabled:     getEnv("OIDC_MOCK_ENABLED", "true") == "true",
 			MockUser:        getEnv("OIDC_MOCK_USER", "oidc-user"),
+		},
+		AMS: AMSConfig{
+			BaseURL:    getEnv("AMS_BASE_URL", ""),
+			TimeoutSec: getEnvInt64("AMS_TIMEOUT_SEC", 8),
+			Username:   getEnv("AMS_USERNAME", ""),
+			Password:   getEnv("AMS_PASSWORD", ""),
 		},
 	}
 
