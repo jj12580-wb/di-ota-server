@@ -6,13 +6,17 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
+	"net/netip"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -67,6 +71,8 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 	api := r.Group("/api/v1")
 	{
 		registerAMSDeviceRoutes(api, cfg)
+		registerDeviceGroupRoutes(api, cfg, q)
+		registerUpgradeRecordRoutes(api, cfg, q)
 
 		api.GET("/ping", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"env": cfg.API.Port}})
@@ -479,7 +485,7 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 					offset = n
 				}
 			}
-			packages, err := q.ListPackages(c.Request.Context(), store.ListPackagesParams{Limit: int32(limit), Offset: int32(offset)})
+			packages, err := q.ListPackagesExt(c.Request.Context(), int32(limit), int32(offset))
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "query packages failed"})
 				return
@@ -498,7 +504,7 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "package_id is required"})
 				return
 			}
-			pkg, err := q.GetPackageByID(c.Request.Context(), packageID)
+			pkg, err := q.GetPackageByIDExt(c.Request.Context(), packageID)
 			if err != nil {
 				if err == sql.ErrNoRows {
 					c.JSON(http.StatusNotFound, gin.H{"code": 2002, "message": "package not found"})
@@ -560,7 +566,11 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				return
 			}
 
-			id := "pkg-" + uuid.NewString()
+			id, idErr := newShortID6()
+			if idErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "generate package id failed"})
+				return
+			}
 			record, err := q.CreatePackage(c.Request.Context(), store.CreatePackageParams{
 				PackageID:   id,
 				ProductCode: req.ProductCode,
@@ -596,7 +606,12 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 
 			packageID := strings.TrimSpace(req.PackageID)
 			if packageID == "" {
-				packageID = "pkg-" + uuid.NewString()
+				id, idErr := newShortID6()
+				if idErr != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "generate package id failed"})
+					return
+				}
+				packageID = id
 			}
 
 			uploadURL, objectKey, expiresAt, err := buildS3PresignedUploadURL(cfg, packageID)
@@ -635,6 +650,7 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				PackageID   string `json:"package_id"`
 				ProductCode string `json:"product_code"`
 				Version     string `json:"version"`
+				FileName    string `json:"file_name"`
 				FileHash    string `json:"file_hash"`
 				Signature   string `json:"signature"`
 				FileSize    int64  `json:"file_size"`
@@ -665,8 +681,228 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "create package failed"})
 				return
 			}
+			_ = q.UpdatePackageNameAndSize(c.Request.Context(), record.PackageID, req.FileName, req.FileSize)
 
 			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": record})
+		})
+
+		// Bridge upload via backend to avoid browser PUT to MinIO domain.
+		// Multipart: product_code, version, signature(optional), file
+		api.POST("/packages/upload", func(c *gin.Context) {
+			if !hasBearer(c.GetHeader("Authorization")) {
+				c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "unauthorized"})
+				return
+			}
+
+			productCode := strings.TrimSpace(c.PostForm("product_code"))
+			version := strings.TrimSpace(c.PostForm("version"))
+			signature := strings.TrimSpace(c.PostForm("signature"))
+			if productCode == "" || version == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "product_code and version are required"})
+				return
+			}
+
+			fh, header, err := c.Request.FormFile("file")
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "file is required"})
+				return
+			}
+			defer fh.Close()
+
+			packageID, idErr := newShortID6()
+			if idErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "generate package id failed"})
+				return
+			}
+			objectKey := "ota/" + packageID
+			fileName := ""
+			if header != nil {
+				fileName = strings.TrimSpace(header.Filename)
+			}
+
+			// Read stream once, compute sha256, and upload via PutObject.
+			hasher := sha256.New()
+			tee := io.TeeReader(fh, hasher)
+
+			client, err := buildMinIOClient(cfg)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "init storage client failed"})
+				return
+			}
+			ct := header.Header.Get("Content-Type")
+			if strings.TrimSpace(ct) == "" {
+				ct = "application/octet-stream"
+			}
+			putInfo, err := client.PutObject(
+				c.Request.Context(),
+				strings.TrimSpace(cfg.S3.Bucket),
+				objectKey,
+				tee,
+				-1,
+				minio.PutObjectOptions{ContentType: ct},
+			)
+			if err != nil {
+				c.JSON(http.StatusBadGateway, gin.H{"code": 5000, "message": "upload to storage failed"})
+				return
+			}
+
+			fileHash := hex.EncodeToString(hasher.Sum(nil))
+			record, err := q.CreatePackage(c.Request.Context(), store.CreatePackageParams{
+				PackageID:   packageID,
+				ProductCode: productCode,
+				Version:     version,
+				FileHash:    fileHash,
+				Signature:   signature,
+				Status:      "Published",
+			})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "create package failed"})
+				return
+			}
+			_ = q.UpdatePackageNameAndSize(c.Request.Context(), packageID, fileName, putInfo.Size)
+
+			ext, err := q.GetPackageByIDExt(c.Request.Context(), packageID)
+			if err != nil {
+				c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": record})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": ext})
+		})
+
+		// Upload package by providing a download url (server downloads it silently).
+		api.POST("/packages/upload-by-url", func(c *gin.Context) {
+			if !hasBearer(c.GetHeader("Authorization")) {
+				c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "unauthorized"})
+				return
+			}
+
+			var req struct {
+				ProductCode string `json:"product_code"`
+				Version     string `json:"version"`
+				Signature   string `json:"signature"`
+				DownloadURL string `json:"download_url"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid request"})
+				return
+			}
+			productCode := strings.TrimSpace(req.ProductCode)
+			version := strings.TrimSpace(req.Version)
+			signature := strings.TrimSpace(req.Signature)
+			downloadURL := strings.TrimSpace(req.DownloadURL)
+			if productCode == "" || version == "" || downloadURL == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "product_code/version/download_url are required"})
+				return
+			}
+
+			u, err := url.Parse(downloadURL)
+			if err != nil || u.Scheme == "" || u.Host == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid download_url"})
+				return
+			}
+			if u.Scheme != "http" && u.Scheme != "https" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "download_url must be http/https"})
+				return
+			}
+
+			host := u.Hostname()
+			if isBlockedDownloadHost(host) {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "download_url host is not allowed"})
+				return
+			}
+
+			packageID, idErr := newShortID6()
+			if idErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "generate package id failed"})
+				return
+			}
+
+			// Create placeholder record immediately (so console can see it).
+			placeholderName := "正在后台下载"
+			record, err := q.CreatePackage(c.Request.Context(), store.CreatePackageParams{
+				PackageID:   packageID,
+				ProductCode: productCode,
+				Version:     version,
+				FileHash:    "DOWNLOADING",
+				Signature:   signature,
+				Status:      "Draft",
+			})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "create package failed"})
+				return
+			}
+			_ = q.UpdatePackageNameAndSize(c.Request.Context(), packageID, placeholderName, 0)
+
+			// Start background download and upload.
+			go func(packageID string, downloadURL *url.URL, signature string) {
+				timeout := 10 * time.Minute
+				ctx, cancel := context.WithTimeout(context.Background(), timeout)
+				defer cancel()
+
+				httpClient := &http.Client{Timeout: timeout}
+				dlReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL.String(), nil)
+				dlReq.Header.Set("Accept", "*/*")
+
+				dlResp, dlErr := httpClient.Do(dlReq)
+				if dlErr != nil {
+					_ = q.UpdatePackageDownloadResult(ctx, packageID, "DOWNLOAD_FAILED", signature, "Draft", "后台下载失败", 0)
+					return
+				}
+				defer dlResp.Body.Close()
+				if dlResp.StatusCode < 200 || dlResp.StatusCode >= 300 {
+					_ = q.UpdatePackageDownloadResult(ctx, packageID, "DOWNLOAD_FAILED", signature, "Draft", fmt.Sprintf("后台下载失败(%s)", dlResp.Status), 0)
+					return
+				}
+
+				objectKey := "ota/" + packageID
+				fileName := pickFilenameFromHeaders(dlResp.Header.Get("Content-Disposition"))
+				if fileName == "" {
+					fileName = path.Base(downloadURL.Path)
+				}
+				fileName = strings.TrimSpace(fileName)
+				if fileName == "" {
+					fileName = "downloaded.bin"
+				}
+
+				ct := strings.TrimSpace(dlResp.Header.Get("Content-Type"))
+				if ct == "" {
+					ct = "application/octet-stream"
+				}
+				if v, _, perr := mime.ParseMediaType(ct); perr == nil && v != "" {
+					ct = v
+				}
+
+				hasher := sha256.New()
+				tee := io.TeeReader(dlResp.Body, hasher)
+
+				client, err := buildMinIOClient(cfg)
+				if err != nil {
+					_ = q.UpdatePackageDownloadResult(ctx, packageID, "UPLOAD_FAILED", signature, "Draft", "存储连接失败", 0)
+					return
+				}
+				putInfo, err := client.PutObject(
+					ctx,
+					strings.TrimSpace(cfg.S3.Bucket),
+					objectKey,
+					tee,
+					-1,
+					minio.PutObjectOptions{ContentType: ct},
+				)
+				if err != nil {
+					_ = q.UpdatePackageDownloadResult(ctx, packageID, "UPLOAD_FAILED", signature, "Draft", "上传存储失败", 0)
+					return
+				}
+
+				fileHash := hex.EncodeToString(hasher.Sum(nil))
+				_ = q.UpdatePackageDownloadResult(ctx, packageID, fileHash, signature, "Published", fileName, putInfo.Size)
+			}(packageID, u, signature)
+
+			ext, err := q.GetPackageByIDExt(c.Request.Context(), packageID)
+			if err != nil {
+				c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": record})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": ext})
 		})
 
 		api.GET("/release-tasks", func(c *gin.Context) {
@@ -686,12 +922,52 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 					offset = n
 				}
 			}
-			tasks, err := q.ListReleaseTasks(c.Request.Context(), store.ListReleaseTasksParams{Limit: int32(limit), Offset: int32(offset)})
+			rows, err := q.ListReleaseTasks(c.Request.Context(), store.ListReleaseTasksParams{Limit: int32(limit), Offset: int32(offset)})
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "query tasks failed"})
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": tasks})
+			pkgCache := map[string]store.PackageExt{}
+			out := make([]gin.H, 0, len(rows))
+			for _, r := range rows {
+				productCode := ""
+				if r.ProductCode.Valid {
+					productCode = strings.TrimSpace(r.ProductCode.String)
+				}
+				version := ""
+				if r.Version.Valid {
+					version = strings.TrimSpace(r.Version.String)
+				}
+				description := ""
+				if strings.TrimSpace(r.PackageID) != "" {
+					if cached, ok := pkgCache[r.PackageID]; ok {
+						description = strings.TrimSpace(cached.Name)
+					} else if ext, e := q.GetPackageByIDExt(c.Request.Context(), r.PackageID); e == nil {
+						pkgCache[r.PackageID] = ext
+						description = strings.TrimSpace(ext.Name)
+						if productCode == "" {
+							productCode = strings.TrimSpace(ext.ProductCode)
+						}
+						if version == "" {
+							version = strings.TrimSpace(ext.Version)
+						}
+					}
+				}
+				out = append(out, gin.H{
+					"task_id":           r.TaskID,
+					"package_id":        r.PackageID,
+					"target_group":      r.TargetGroup,
+					"product_model":     r.ProductModel,
+					"hardware_version":  r.HardwareVersion,
+					"failure_threshold": r.FailureThreshold,
+					"state":             r.State,
+					"created_at":        r.CreatedAt,
+					"product_code":      productCode,
+					"version":           version,
+					"description":       description,
+				})
+			}
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": out})
 		})
 
 		api.GET("/release-tasks/:task_id", func(c *gin.Context) {
@@ -782,7 +1058,11 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				schedule = sql.NullTime{Time: t, Valid: true}
 			}
 
-			id := "task-" + uuid.NewString()
+			id, idErr := newTaskID()
+			if idErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "generate task id failed"})
+				return
+			}
 			task, err := q.CreateReleaseTaskExt(c.Request.Context(), store.CreateReleaseTaskExtParams{
 				TaskID:           id,
 				PackageID:        req.PackageID,
@@ -1485,7 +1765,7 @@ func buildS3PresignedDownloadURL(cfg *config.Config, packageID string) (string, 
 }
 
 func buildS3PresignedUploadURL(cfg *config.Config, packageID string) (string, string, time.Time, error) {
-	client, err := buildMinIOClient(cfg)
+	client, err := buildMinIOSigningClient(cfg)
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
@@ -1529,6 +1809,29 @@ func buildMinIOClient(cfg *config.Config) (*minio.Client, error) {
 	return client, nil
 }
 
+// buildMinIOSigningClient returns a MinIO client used ONLY for presigning URLs.
+// If S3_PUBLIC_BASE_URL is configured, we use its scheme/host for presigning so
+// the returned URL is accessible from browsers (via public domain / reverse proxy),
+// while still signing with the same credentials.
+func buildMinIOSigningClient(cfg *config.Config) (*minio.Client, error) {
+	publicBase := strings.TrimSpace(cfg.S3.PublicBaseURL)
+	if publicBase != "" {
+		u, err := url.Parse(publicBase)
+		if err == nil && strings.TrimSpace(u.Host) != "" {
+			client, err := minio.New(u.Host, &minio.Options{
+				Creds:  minioCreds.NewStaticV4(cfg.S3.AccessKeyID, cfg.S3.SecretAccessKey, ""),
+				Secure: strings.EqualFold(u.Scheme, "https"),
+				Region: strings.TrimSpace(cfg.S3.Region),
+			})
+			if err == nil {
+				return client, nil
+			}
+			// fallthrough to internal endpoint
+		}
+	}
+	return buildMinIOClient(cfg)
+}
+
 func validateUploadedObject(cfg *config.Config, packageID, expectedHash string, expectedSize int64) error {
 	client, err := buildMinIOClient(cfg)
 	if err != nil {
@@ -1550,6 +1853,37 @@ func validateUploadedObject(cfg *config.Config, packageID, expectedHash string, 
 	}
 
 	return nil
+}
+
+func pickFilenameFromHeaders(contentDisposition string) string {
+	_, params, err := mime.ParseMediaType(contentDisposition)
+	if err != nil || len(params) == 0 {
+		return ""
+	}
+	if v := strings.TrimSpace(params["filename*"]); v != "" {
+		// RFC 5987, we keep it simple: last segment after ''
+		if idx := strings.LastIndex(v, "''"); idx >= 0 && idx+2 < len(v) {
+			return v[idx+2:]
+		}
+		return v
+	}
+	return strings.TrimSpace(params["filename"])
+}
+
+func isBlockedDownloadHost(host string) bool {
+	host = strings.TrimSpace(strings.ToLower(host))
+	if host == "" {
+		return true
+	}
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return true
+	}
+	// If host is literal IP, check private/loopback/link-local.
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast()
+	}
+	// For non-IP hostname, allow (DNS resolution SSRF protection is non-trivial).
+	return false
 }
 
 func pickMetaValue(meta map[string]string, keys ...string) string {

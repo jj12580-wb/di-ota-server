@@ -11,6 +11,9 @@ import { DevicesPage } from './pages/DevicesPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { DeviceDetailPage } from './pages/DeviceDetailPage';
+import { DeviceGroupsPage } from './pages/DeviceGroupsPage';
+import { DeviceGroupDetailPage } from './pages/DeviceGroupDetailPage';
+import { UpgradeRecordsPage } from './pages/UpgradeRecordsPage';
 import useAuthStore from './stores/authStore';
 
 function PrivateRoute() {
@@ -33,6 +36,9 @@ export const router = createHashRouter([
         { path: '/users/:id', element: <UserDetailPage /> },
         { path: '/devices', element: <DevicesPage /> },
         { path: '/devices/:id', element: <DeviceDetailPage /> },
+        { path: '/device-groups', element: <DeviceGroupsPage /> },
+        { path: '/device-groups/:id', element: <DeviceGroupDetailPage /> },
+        { path: '/upgrade-records', element: <UpgradeRecordsPage /> },
         { path: '/alerts', element: <AlertsPage /> },
         { path: '/packages', element: <PackagesPage /> },
         { path: '/packages/:id', element: <PackageDetailPage /> },

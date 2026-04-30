@@ -14,6 +14,8 @@ export interface Package {
   signature: string;
   status: string;
   created_at: string;
+  name?: string;
+  file_size?: number;
 }
 
 export interface ReleaseTask {
@@ -30,6 +32,7 @@ export interface ReleaseTask {
   force_upgrade?: boolean;
   product_code?: string;
   version?: string;
+  description?: string;
 }
 
 export interface TaskStats {
@@ -116,6 +119,21 @@ export interface AMSOrganization {
   [key: string]: unknown;
 }
 
+export interface DeviceGroup {
+  group_id: string;
+  group_code: string;
+  group_name: string;
+  platform_id: number | null;
+  org_id: number | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeviceGroupListItem extends DeviceGroup {
+  device_count: number;
+}
+
 function wrap<T>(promise: Promise<{ data: APIResponse<T> }>): Promise<T> {
   return promise.then((res) => {
     if (res.data.code !== 0) {
@@ -161,11 +179,28 @@ export const packageAPI = {
       api.get('/packages', { params: { limit, offset } })
     ),
   get: (id: string) => wrap<Package>(api.get(`/packages/${id}`)),
+  upload: (params: { product_code: string; version: string; signature?: string; file: File }) => {
+    const form = new FormData();
+    form.append('product_code', params.product_code);
+    form.append('version', params.version);
+    if (params.signature) form.append('signature', params.signature);
+    form.append('file', params.file);
+    return wrap<Package>(
+      api.post('/packages/upload', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 180000,
+      })
+    );
+  },
+  uploadByUrl: (params: { product_code: string; version: string; signature?: string; download_url: string }) =>
+    wrap<Package>(
+      api.post('/packages/upload-by-url', params, { timeout: 30000 })
+    ),
   uploadUrl: (params: { package_id?: string; file_name: string; content_type: string; file_hash?: string }) =>
     wrap<{ package_id: string; upload_url: string; object_key: string; expires_at: number; required_headers: Record<string, string> }>(
       api.post('/packages/upload-url', params)
     ),
-  complete: (params: { package_id: string; product_code: string; version: string; file_hash: string; signature: string; file_size: number }) =>
+  complete: (params: { package_id: string; product_code: string; version: string; file_name?: string; file_hash: string; signature: string; file_size: number }) =>
     wrap<Package>(api.post('/packages/complete', params)),
   updateStatus: (id: string, status: string) =>
     wrap<Package>(api.patch(`/packages/${id}/status`, { status })),
@@ -222,6 +257,86 @@ export const platformAPI = {
 
 export const organizationAPI = {
   list: () => wrap<AMSOrganization[]>(api.get('/organizations')),
+};
+
+export const deviceGroupAPI = {
+  list: (params?: { limit?: number; offset?: number; keyword?: string; platform_id?: number; org_id?: number }) =>
+    wrap<{ items: DeviceGroupListItem[]; total: number }>(
+      api.get('/device-groups', {
+        params: {
+          limit: params?.limit ?? 20,
+          offset: params?.offset ?? 0,
+          keyword: params?.keyword ?? '',
+          platform_id: params?.platform_id,
+          org_id: params?.org_id,
+        },
+      })
+    ),
+  create: (payload: { group_code: string; group_name: string; platform_id?: number; org_id?: number }) =>
+    wrap<DeviceGroup>(api.post('/device-groups', payload)),
+  get: (groupId: string) =>
+    wrap<{ group: DeviceGroup; device_count: number }>(api.get(`/device-groups/${groupId}`)),
+  update: (groupId: string, payload: { group_code: string; group_name: string; platform_id?: number; org_id?: number }) =>
+    wrap<DeviceGroup>(api.patch(`/device-groups/${groupId}`, payload)),
+  remove: (groupId: string) => wrap<{ deleted: boolean }>(api.delete(`/device-groups/${groupId}`)),
+  members: (groupId: string, params?: { limit?: number; offset?: number }) =>
+    wrap<{ sns: string[]; total: number }>(
+      api.get(`/device-groups/${groupId}/members`, { params: { limit: params?.limit ?? 50, offset: params?.offset ?? 0 } })
+    ),
+  addMembers: (groupId: string, sns: string[]) =>
+    wrap<{ added: number }>(api.post(`/device-groups/${groupId}/members`, { sns })),
+  removeMembers: (groupId: string, sns: string[]) =>
+    wrap<{ removed: number }>(api.delete(`/device-groups/${groupId}/members`, { data: { sns } })),
+  devices: (groupId: string, params?: { limit?: number; offset?: number }) =>
+    wrap<{ items: AMSDeviceItem[]; not_found: string[]; total: number }>(
+      api.get(`/device-groups/${groupId}/devices`, { params: { limit: params?.limit ?? 50, offset: params?.offset ?? 0 } })
+    ),
+};
+
+export interface UpgradeRecordItem {
+  id: number;
+  device_name: string;
+  device_id: string;
+  task_id: string;
+  package_id: string;
+  product_code: string;
+  version: string;
+  upgrade_time: string;
+  status: string;
+  source_version: string;
+  target_version: string;
+  error_code: string;
+  group: string;
+  group_name: string;
+}
+
+export const upgradeAPI = {
+  list: (params?: {
+    limit?: number;
+    offset?: number;
+    task_id?: string;
+    device_id?: string;
+    device_name?: string;
+    group?: string;
+    package_id?: string;
+    version?: string;
+    status?: string;
+  }) =>
+    wrap<{ items: UpgradeRecordItem[]; total: number }>(
+      api.get('/upgrade-records', {
+        params: {
+          limit: params?.limit ?? 20,
+          offset: params?.offset ?? 0,
+          task_id: params?.task_id ?? '',
+          device_id: params?.device_id ?? '',
+          device_name: params?.device_name ?? '',
+          group: params?.group ?? '',
+          package_id: params?.package_id ?? '',
+          version: params?.version ?? '',
+          status: params?.status ?? '',
+        },
+      })
+    ),
 };
 
 export const dashboardAPI = {

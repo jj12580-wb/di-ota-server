@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Avatar, Button, Typography, Space, Tag } from 'antd';
-import { DashboardOutlined, BoxPlotOutlined, ThunderboltOutlined, LogoutOutlined, UserOutlined, TeamOutlined, LaptopOutlined, AlertOutlined } from '@ant-design/icons';
+import { DashboardOutlined, BoxPlotOutlined, ThunderboltOutlined, LogoutOutlined, UserOutlined, TeamOutlined, LaptopOutlined, AlertOutlined, ClusterOutlined, HistoryOutlined } from '@ant-design/icons';
 import useAuthStore from '../stores/authStore';
 
 const { Sider, Header, Content } = Layout;
@@ -10,6 +10,8 @@ const menuItems = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
   { key: '/devices', icon: <LaptopOutlined />, label: '设备管理' },
+  { key: '/device-groups', icon: <ClusterOutlined />, label: '分组管理' },
+  { key: '/upgrade-records', icon: <HistoryOutlined />, label: '升级记录' },
   { key: '/alerts', icon: <AlertOutlined />, label: '告警中心' },
   { key: '/packages', icon: <BoxPlotOutlined />, label: '固件包' },
   { key: '/tasks', icon: <ThunderboltOutlined />, label: '发布任务' },

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Form, Input, Select, message, Modal, Table, Tag, Typography } from 'antd';
+import { Button, Card, Form, Input, Select, Upload, message, Modal, Table, Tag, Typography, Radio } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { Package, packageAPI } from '../api';
@@ -22,6 +22,9 @@ export function PackagesPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [form] = Form.useForm();
   const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [hashing, setHashing] = useState(false);
+  const [uploadMode, setUploadMode] = useState<'file' | 'url'>('file');
   const navigate = useNavigate();
 
   const load = async () => {
@@ -39,32 +42,47 @@ export function PackagesPage() {
   const handleUpload = async (values: any) => {
     setUploading(true);
     try {
-      const file = values.file?.file;
-      if (!file) { message.error('请选择文件'); return; }
-
-      const { package_id, upload_url } = await packageAPI.uploadUrl({
-        file_name: file.name,
-        content_type: file.type || 'application/octet-stream',
-      });
-
-      await fetch(upload_url, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': 'application/octet-stream' },
-      });
-
-      await packageAPI.complete({
-        package_id,
-        product_code: values.product_code,
-        version: values.version,
-        file_hash: values.file_hash || '',
-        signature: values.signature || '',
-        file_size: file.size,
-      });
+      if (uploadMode === 'file') {
+        const file = selectedFile;
+        if (!file) {
+          message.error('请选择文件');
+          return;
+        }
+        await packageAPI.upload({
+          product_code: values.product_code,
+          version: values.version,
+          signature: values.signature || undefined,
+          file,
+        });
+      } else {
+        const downloadUrl = String(values.download_url || '').trim();
+        if (!downloadUrl) {
+          message.error('请输入下载地址');
+          return;
+        }
+        // simple URL validation
+        let parsed: URL | null = null;
+        try {
+          parsed = new URL(downloadUrl);
+        } catch {
+          parsed = null;
+        }
+        if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+          message.error('下载地址必须是 http/https URL');
+          return;
+        }
+        await packageAPI.uploadByUrl({
+          product_code: values.product_code,
+          version: values.version,
+          signature: values.signature || undefined,
+          download_url: downloadUrl,
+        });
+      }
 
       message.success('上传成功');
       setUploadOpen(false);
       form.resetFields();
+      setSelectedFile(null);
       load();
     } catch (e: any) {
       message.error(e.message);
@@ -72,6 +90,13 @@ export function PackagesPage() {
       setUploading(false);
     }
   };
+
+  async function computeSHA256Hex(file: File): Promise<string> {
+    const buf = await file.arrayBuffer();
+    const digest = await crypto.subtle.digest('SHA-256', buf);
+    const bytes = new Uint8Array(digest);
+    return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
 
   const handleDeprecate = (pkg: Package) => {
     Modal.confirm({
@@ -90,7 +115,7 @@ export function PackagesPage() {
 
   const columns = [
     { title: '包 ID', dataIndex: 'package_id', key: 'package_id', width: 220, render: (v: string) => <a onClick={() => navigate(`/packages/${v}`)}>{v}</a> },
-    { title: '产品代码', dataIndex: 'product_code', key: 'product_code' },
+    { title: '名称', dataIndex: 'name', key: 'name', render: (v: string) => v || '-' },
     { title: '版本', dataIndex: 'version', key: 'version' },
     { title: '状态', dataIndex: 'status', key: 'status', render: (v: string) => <Tag color={statusColor[v]}>{v}</Tag> },
     { title: '创建时间', dataIndex: 'created_at', key: 'created_at', render: (v: string) => new Date(v).toLocaleString() },
@@ -148,25 +173,120 @@ export function PackagesPage() {
 
         <Table columns={columns} dataSource={filteredPackages} loading={loading} rowKey="package_id" pagination={{ pageSize: 12 }} size="middle" scroll={filteredPackages.length > 0 ? { x: 880 } : undefined} />
 
-        <Modal width="min(560px, calc(100vw - 24px))" title="上传固件包" open={uploadOpen} onCancel={() => { setUploadOpen(false); form.resetFields(); }} footer={null}>
+        <Modal
+          width="min(560px, calc(100vw - 24px))"
+          title="上传固件包"
+          open={uploadOpen}
+          onCancel={() => {
+            setUploadOpen(false);
+            form.resetFields();
+            setSelectedFile(null);
+            setUploadMode('file');
+          }}
+          footer={null}
+        >
           <Form form={form} layout="vertical" onFinish={handleUpload}>
-            <Form.Item name="product_code" label="产品代码" rules={[{ required: true }]}>
+            <Form.Item name="product_code" label="名称" rules={[{ required: true }]}>
               <Input />
             </Form.Item>
             <Form.Item name="version" label="版本号" rules={[{ required: true }]}>
               <Input />
             </Form.Item>
-            <Form.Item name="file_hash" label="文件哈希">
-              <Input />
-            </Form.Item>
             <Form.Item name="signature" label="签名">
               <Input.TextArea rows={2} />
             </Form.Item>
-            <Form.Item name="file" label="固件文件" rules={[{ required: true }]}>
-              <Input type="file" />
+            <Form.Item label="上传方式">
+              <Radio.Group
+                value={uploadMode}
+                onChange={(e) => {
+                  const next = e.target.value as 'file' | 'url';
+                  setUploadMode(next);
+                  setSelectedFile(null);
+                  form.setFieldValue('download_url', '');
+                }}
+                options={[
+                  { label: '选择文件上传', value: 'file' },
+                  { label: '输入下载地址（服务器后台下载）', value: 'url' },
+                ]}
+              />
             </Form.Item>
+
+            {uploadMode === 'file' ? (
+              <>
+                <Form.Item name="file_hash" label="文件哈希">
+                  <Input placeholder="选择文件后自动计算" disabled />
+                </Form.Item>
+                <Form.Item label="固件文件" required>
+                  <Upload
+                    maxCount={1}
+                    beforeUpload={() => false}
+                    onRemove={() => {
+                      setSelectedFile(null);
+                      form.setFieldValue('file_hash', '');
+                    }}
+                    onChange={async (info) => {
+                      const f = info.fileList?.[0]?.originFileObj as File | undefined;
+                      if (!f) return;
+                      setSelectedFile(f);
+                      setHashing(true);
+                      try {
+                        const h = await computeSHA256Hex(f);
+                        form.setFieldValue('file_hash', h);
+                      } catch (e: any) {
+                        message.error(e?.message || '计算文件哈希失败');
+                        form.setFieldValue('file_hash', '');
+                      } finally {
+                        setHashing(false);
+                      }
+                    }}
+                  >
+                    <Button icon={<UploadOutlined />} loading={hashing}>
+                      选择文件
+                    </Button>
+                  </Upload>
+                  {selectedFile ? (
+                    <div className="ota-muted" style={{ marginTop: 8 }}>
+                      已选择：{selectedFile.name}（{(selectedFile.size / 1024 / 1024).toFixed(2)} MB）
+                    </div>
+                  ) : null}
+                </Form.Item>
+              </>
+            ) : (
+              <Form.Item
+                name="download_url"
+                label="文件下载地址"
+                rules={[
+                  { required: true, message: '请输入下载地址' },
+                  {
+                    validator: async (_, value) => {
+                      const v = String(value || '').trim();
+                      if (!v) return Promise.resolve();
+                      try {
+                        const u = new URL(v);
+                        if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+                          return Promise.reject(new Error('必须是 http/https URL'));
+                        }
+                        return Promise.resolve();
+                      } catch {
+                        return Promise.reject(new Error('URL 格式不合法'));
+                      }
+                    },
+                  },
+                ]}
+              >
+                <Input placeholder="https://example.com/firmware.bin" />
+              </Form.Item>
+            )}
             <Form.Item>
-              <Button type="primary" htmlType="submit" loading={uploading} block>上传</Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={uploading}
+                disabled={(uploadMode === 'file' && (!selectedFile || hashing)) || (uploadMode === 'url' && hashing)}
+                block
+              >
+                上传
+              </Button>
             </Form.Item>
           </Form>
         </Modal>

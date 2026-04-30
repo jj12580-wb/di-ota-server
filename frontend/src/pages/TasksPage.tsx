@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Card, DatePicker, Form, Input, InputNumber, Switch, Select, message, Modal, Table, Tag, Typography } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { ReleaseTask, taskAPI } from '../api';
+import { DeviceGroupListItem, Package, ReleaseTask, deviceGroupAPI, packageAPI, taskAPI } from '../api';
 
 const { Paragraph, Title } = Typography;
 
@@ -27,6 +27,11 @@ export function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [metaLoading, setMetaLoading] = useState(false);
+  const [packages, setPackages] = useState<Package[]>([]);
+  const [groups, setGroups] = useState<DeviceGroupListItem[]>([]);
+  const [selectedPackage, setSelectedPackage] = useState<Package | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<DeviceGroupListItem | null>(null);
   const [form] = Form.useForm();
   const navigate = useNavigate();
 
@@ -41,6 +46,23 @@ export function TasksPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (!createOpen) return;
+    setSelectedPackage(null);
+    setSelectedGroup(null);
+    setMetaLoading(true);
+    Promise.all([
+      packageAPI.list(200, 0).then((d) => d.packages ?? []),
+      deviceGroupAPI.list({ limit: 200, offset: 0 }).then((d) => d.items ?? []),
+    ])
+      .then(([pkgs, grps]) => {
+        setPackages(pkgs);
+        setGroups(grps);
+      })
+      .catch((e: any) => message.error(e.message || '加载固件包/分组失败'))
+      .finally(() => setMetaLoading(false));
+  }, [createOpen]);
 
   const handleCreate = async (values: any) => {
     setCreating(true);
@@ -85,7 +107,7 @@ export function TasksPage() {
 
   const columns = [
     { title: '任务 ID', dataIndex: 'task_id', key: 'task_id', width: 220, render: (v: string) => <a onClick={() => navigate(`/tasks/${v}`)}>{v}</a> },
-    { title: '产品', key: 'product', render: (_: unknown, r: ReleaseTask) => `${r.product_code ?? '-'} v${r.version ?? '-'}` },
+    { title: '说明', key: 'product', render: (_: unknown, r: ReleaseTask) => `${r.description || '-'} v${r.version || '-'}` },
     { title: '分组', dataIndex: 'target_group', key: 'target_group' },
     { title: '型号', dataIndex: 'product_model', key: 'product_model' },
     { title: '状态', dataIndex: 'state', key: 'state', render: (v: string) => <Tag color={stateColor[v]}>{v}</Tag> },
@@ -153,13 +175,66 @@ export function TasksPage() {
 
         <Table columns={columns} dataSource={filteredTasks} loading={loading} rowKey="task_id" pagination={{ pageSize: 12 }} size="middle" scroll={filteredTasks.length > 0 ? { x: 920 } : undefined} />
 
-        <Modal width="min(560px, calc(100vw - 24px))" title="新建发布任务" open={createOpen} onCancel={() => { setCreateOpen(false); form.resetFields(); }} footer={null}>
+        <Modal
+          width="min(640px, calc(100vw - 24px))"
+          title="新建发布任务"
+          open={createOpen}
+          onCancel={() => {
+            setCreateOpen(false);
+            setSelectedPackage(null);
+            setSelectedGroup(null);
+            form.resetFields();
+          }}
+          footer={null}
+        >
           <Form form={form} layout="vertical" onFinish={handleCreate}>
-            <Form.Item name="package_id" label="固件包 ID" rules={[{ required: true }]}>
-              <Input placeholder="pkg-xxx" />
+            <Form.Item name="package_id" label="固件包" rules={[{ required: true, message: '请选择固件包' }]}>
+              <Select
+                loading={metaLoading}
+                showSearch
+                optionFilterProp="label"
+                placeholder="先选择固件包"
+                options={packages.map((p) => ({
+                  value: p.package_id,
+                  label: `${p.product_code} v${p.version} (${p.package_id})`,
+                }))}
+                onChange={(value) => {
+                  const pkg = packages.find((p) => p.package_id === value) ?? null;
+                  setSelectedPackage(pkg);
+                }}
+              />
             </Form.Item>
-            <Form.Item name="group" label="目标分组" rules={[{ required: true }]}>
-              <Input />
+            <Form.Item label="固件信息">
+              <Input
+                disabled
+                value={selectedPackage ? `${selectedPackage.product_code} v${selectedPackage.version}` : ''}
+                placeholder="选择固件包后自动填入"
+              />
+            </Form.Item>
+
+            <Form.Item name="group" label="目标分组" rules={[{ required: true, message: '请选择目标分组' }]}>
+              <Select
+                loading={metaLoading}
+                showSearch
+                optionFilterProp="label"
+                placeholder="选择目标分组（将自动填入分组编号）"
+                options={groups.map((g) => ({
+                  value: g.group_code,
+                  label: `${g.group_name} (${g.group_code})`,
+                }))}
+                onChange={(value) => {
+                  const grp = groups.find((g) => g.group_code === value) ?? null;
+                  setSelectedGroup(grp);
+                  form.setFieldValue('group', value);
+                }}
+              />
+            </Form.Item>
+            <Form.Item label="分组信息">
+              <Input
+                disabled
+                value={selectedGroup ? `${selectedGroup.group_name}（设备数：${selectedGroup.device_count}）` : ''}
+                placeholder="选择分组后自动填入"
+              />
             </Form.Item>
             <Form.Item name="product_model" label="产品型号" rules={[{ required: true }]}>
               <Input />

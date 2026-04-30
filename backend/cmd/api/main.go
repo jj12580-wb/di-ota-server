@@ -29,6 +29,7 @@ func main() {
 			"migrations/002_task_stats_snapshot_idx.sql",
 			"migrations/003_task_and_package_state.sql",
 			"migrations/004_user_management.sql",
+			"migrations/005_device_groups.sql",
 		} {
 			if err := db.ApplySchema(pg, f); err != nil {
 				log.Fatalf("apply schema %s failed: %v", f, err)
