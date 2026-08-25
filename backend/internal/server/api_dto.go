@@ -30,7 +30,7 @@ func rawJSONFromNullRaw(v pqtype.NullRawMessage) interface{} {
 }
 
 func mapTReleaseTask(task store.TReleaseTask) gin.H {
-	return gin.H{
+	out := gin.H{
 		"task_id":           task.TaskID,
 		"package_id":        task.PackageID,
 		"target_group":      task.TargetGroup,
@@ -43,6 +43,10 @@ func mapTReleaseTask(task store.TReleaseTask) gin.H {
 		"schedule_time":     nullTimeJSON(task.ScheduleTime),
 		"force_upgrade":     task.ForceUpgrade,
 	}
+	if strings.TrimSpace(task.TargetDeviceID) != "" {
+		out["device_id"] = task.TargetDeviceID
+	}
+	return out
 }
 
 func mapReleaseTaskListRows(rows []store.ListReleaseTasksRow) []gin.H {
@@ -64,9 +68,51 @@ func mapReleaseTaskListRows(rows []store.ListReleaseTasksRow) []gin.H {
 		if row.Version.Valid {
 			item["version"] = row.Version.String
 		}
+		if row.PackageAlias != "" {
+			item["package_alias"] = row.PackageAlias
+		}
 		out = append(out, item)
 	}
 	return out
+}
+
+
+func mapPackageFields(packageID, productCode, version, fileHash, signature, status string, createdAt interface{}, alias string) gin.H {
+	return gin.H{
+		"package_id":   packageID,
+		"product_code": productCode,
+		"version":      version,
+		"file_hash":    fileHash,
+		"signature":    signature,
+		"status":       status,
+		"created_at":   createdAt,
+		"alias":        alias,
+		"name":         alias,
+	}
+}
+
+func mapCreatePackageRow(row store.CreatePackageRow) gin.H {
+	return mapPackageFields(row.PackageID, row.ProductCode, row.Version, row.FileHash, row.Signature, row.Status, row.CreatedAt, row.Name)
+}
+
+func mapGetPackageByIDRow(row store.GetPackageByIDRow) gin.H {
+	return mapPackageFields(row.PackageID, row.ProductCode, row.Version, row.FileHash, row.Signature, row.Status, row.CreatedAt, row.Name)
+}
+
+func mapListPackagesRows(rows []store.ListPackagesRow) []gin.H {
+	out := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, mapPackageFields(row.PackageID, row.ProductCode, row.Version, row.FileHash, row.Signature, row.Status, row.CreatedAt, row.Name))
+	}
+	return out
+}
+
+func mapUpdatePackageStatusRow(row store.UpdatePackageStatusRow) gin.H {
+	return mapPackageFields(row.PackageID, row.ProductCode, row.Version, row.FileHash, row.Signature, row.Status, row.CreatedAt, row.Name)
+}
+
+func mapUpdatePackageAliasRow(row store.UpdatePackageAliasRow) gin.H {
+	return mapPackageFields(row.PackageID, row.ProductCode, row.Version, row.FileHash, row.Signature, row.Status, row.CreatedAt, row.Name)
 }
 
 func mapUserRecord(user store.UserRecord) gin.H {

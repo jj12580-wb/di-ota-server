@@ -25,7 +25,7 @@ const allMenuItems = [
   { key: '/device-secrets', icon: <KeyOutlined />, label: '设备 Secret 管理' },
   { key: '/alerts', icon: <AlertOutlined />, label: '告警中心' },
   { key: '/packages', icon: <BoxPlotOutlined />, label: '固件包' },
-  { key: '/tasks', icon: <ThunderboltOutlined />, label: '发布任务' },
+  { key: '/tasks', icon: <ThunderboltOutlined />, label: '任务中心' },
   { key: '/upgrade-policy', icon: <ControlOutlined />, label: '升级策略' },
 ];
 
@@ -94,7 +94,7 @@ export function MainLayout() {
             </Button>
           </Space>
         </Header>
-        <Content style={{ padding: 20 }}>
+        <Content className="ota-shell-content">
           <Outlet />
         </Content>
       </Layout>

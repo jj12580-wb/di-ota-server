@@ -19,7 +19,7 @@ export function UsersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [createAuthSource, setCreateAuthSource] = useState<'local' | 'sso'>('local');
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(50);
 
   const load = async () => {
     setLoading(true);
@@ -42,7 +42,7 @@ export function UsersPage() {
 
   useEffect(() => {
     void load();
-  }, [page, search, status, role]);
+  }, [page, pageSize, search, status, role]);
 
   const openCreateModal = () => {
     form.setFieldsValue({
@@ -122,9 +122,18 @@ export function UsersPage() {
     ),
   ];
 
+  const handlePageChange = (nextPage: number, nextPageSize?: number) => {
+    if (nextPageSize && nextPageSize !== pageSize) {
+      setPageSize(nextPageSize);
+      setPage(1);
+      return;
+    }
+    setPage(nextPage);
+  };
+
   return (
-    <div className="ota-page">
-      <Card className="ota-card">
+    <div className="ota-page ota-page-fill">
+      <Card className="ota-card ota-card-dense ota-card-list">
         <div className="ota-toolbar">
           <div className="ota-toolbar-left">
             <Input.Search className="ota-toolbar-control-search" placeholder="搜索用户名 / 显示名" allowClear value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} onSearch={() => void load()} />
@@ -165,7 +174,7 @@ export function UsersPage() {
           columns={columns}
           loading={loading}
           dataSource={users}
-          pagination={serverTablePagination(page, pageSize, total, setPage)}
+          pagination={serverTablePagination(page, pageSize, total, handlePageChange)}
           locale={{ emptyText: '当前没有匹配的用户数据。' }}
           scroll={listTableScroll(columns, users.length)}
         />

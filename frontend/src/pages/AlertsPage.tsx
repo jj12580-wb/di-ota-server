@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Select, Space, Table, Tag, message } from 'antd';
 import { CheckOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -6,6 +6,7 @@ import { AlertItem, alertAPI } from '../api';
 import { listTableProps, listTableScroll, serverTablePagination, TABLE_COL_WIDTH } from '../utils/tableActionColumn';
 import { tableIdLinkRenderColumn } from '../utils/tableIdLinkColumn';
 import { tableEllipsisColumn, tableCompactColumn } from '../utils/tableEllipsisColumn';
+import { useResizableColumns } from '../utils/useResizableColumns';
 
 const severityColor: Record<string, string> = {
   critical: 'red',
@@ -28,7 +29,7 @@ export function AlertsPage() {
   const [severityFilter, setSeverityFilter] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(50);
 
   const load = async () => {
     setLoading(true);
@@ -49,7 +50,7 @@ export function AlertsPage() {
     }
   };
 
-  useEffect(() => { void load(); }, [page, statusFilter, severityFilter]);
+  useEffect(() => { void load(); }, [page, statusFilter, severityFilter, pageSize]);
 
   const runAction = async (action: 'acknowledge' | 'close') => {
     if (selected.length === 0) {
@@ -65,29 +66,42 @@ export function AlertsPage() {
     }
   };
 
-  const columns = [
-    tableEllipsisColumn<AlertItem>('告警类型', 'alert_type'),
-    tableCompactColumn<AlertItem>('级别', 'severity', (value: string) => <Tag color={severityColor[value]}>{value}</Tag>, 'severity'),
-    tableCompactColumn<AlertItem>('状态', 'status', (value: string) => <Tag color={statusColor[value]}>{value}</Tag>, 'status'),
-    tableIdLinkRenderColumn<AlertItem>(
-      '资源',
-      'resource',
-      (r) => `${r.resource_type}/${r.resource_id}`,
-      (r) => {
-        if (r.resource_type === 'task') navigate(`/tasks/${r.resource_id}`);
-        else if (r.resource_type === 'device') navigate(`/devices/${r.resource_id}`);
-      },
-    ),
-    tableEllipsisColumn<AlertItem>('说明', 'message', { size: 'detail' }),
-    tableEllipsisColumn<AlertItem>('创建时间', 'created_at', {
-      size: 'date',
-      render: (v) => new Date(String(v)).toLocaleString(),
-    }),
-  ];
+  const baseColumns = useMemo(
+    () => [
+      tableEllipsisColumn<AlertItem>('告警类型', 'alert_type'),
+      tableCompactColumn<AlertItem>('级别', 'severity', (value: string) => <Tag color={severityColor[value]}>{value}</Tag>, 'severity'),
+      tableCompactColumn<AlertItem>('状态', 'status', (value: string) => <Tag color={statusColor[value]}>{value}</Tag>, 'status'),
+      tableIdLinkRenderColumn<AlertItem>(
+        '资源',
+        'resource',
+        (r) => `${r.resource_type}/${r.resource_id}`,
+        (r) => {
+          if (r.resource_type === 'task') navigate(`/tasks/${r.resource_id}`);
+          else if (r.resource_type === 'device') navigate(`/devices/${r.resource_id}`);
+        },
+      ),
+      tableEllipsisColumn<AlertItem>('说明', 'message', { size: 'detail' }),
+      tableEllipsisColumn<AlertItem>('创建时间', 'created_at', {
+        size: 'date',
+        render: (v) => new Date(String(v)).toLocaleString(),
+      }),
+    ],
+    [navigate],
+  );
+  const { columns, components: tableComponents } = useResizableColumns(baseColumns, 'ota.table.alerts');
+
+  const handlePageChange = (nextPage: number, nextPageSize?: number) => {
+    if (nextPageSize && nextPageSize !== pageSize) {
+      setPageSize(nextPageSize);
+      setPage(1);
+      return;
+    }
+    setPage(nextPage);
+  };
 
   return (
-    <div className="ota-page">
-      <Card className="ota-card">
+    <div className="ota-page ota-page-fill">
+      <Card className="ota-card ota-card-dense ota-card-list">
         <div className="ota-toolbar">
           <div className="ota-toolbar-left">
             <Select
@@ -127,9 +141,10 @@ export function AlertsPage() {
           rowKey="alert_id"
           rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys as string[]) }}
           columns={columns}
+          components={tableComponents}
           dataSource={alerts}
           loading={loading}
-          pagination={serverTablePagination(page, pageSize, total, setPage)}
+          pagination={serverTablePagination(page, pageSize, total, handlePageChange)}
           scroll={listTableScroll(columns, alerts.length, TABLE_COL_WIDTH.selection)}
           locale={{ emptyText: '暂无告警事件' }}
         />

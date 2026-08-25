@@ -17,6 +17,7 @@ type CreateReleaseTaskExtParams struct {
 	CanaryPercent    int32
 	ScheduleTime     sql.NullTime
 	ForceUpgrade     bool
+	TargetDeviceID   string
 }
 
 func (q *Queries) CreateReleaseTaskExt(ctx context.Context, arg CreateReleaseTaskExtParams) (TReleaseTask, error) {
@@ -31,12 +32,13 @@ INSERT INTO t_release_task (
   state,
   canary_percent,
   schedule_time,
-  force_upgrade
+  force_upgrade,
+  target_device_id
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 )
 RETURNING task_id, package_id, target_group, product_model, hardware_version,
-          failure_threshold, state, created_at, canary_percent, schedule_time, force_upgrade
+          failure_threshold, state, created_at, canary_percent, schedule_time, force_upgrade, target_device_id
 `,
 		arg.TaskID,
 		arg.PackageID,
@@ -48,6 +50,7 @@ RETURNING task_id, package_id, target_group, product_model, hardware_version,
 		arg.CanaryPercent,
 		arg.ScheduleTime,
 		arg.ForceUpgrade,
+		arg.TargetDeviceID,
 	)
 
 	var out TReleaseTask
@@ -63,6 +66,7 @@ RETURNING task_id, package_id, target_group, product_model, hardware_version,
 		&out.CanaryPercent,
 		&out.ScheduleTime,
 		&out.ForceUpgrade,
+		&out.TargetDeviceID,
 	)
 	return out, err
 }
@@ -70,7 +74,8 @@ RETURNING task_id, package_id, target_group, product_model, hardware_version,
 func (q *Queries) GetReleaseTaskExt(ctx context.Context, taskID string) (TReleaseTask, error) {
 	row := q.db.QueryRowContext(ctx, `
 SELECT task_id, package_id, target_group, product_model, hardware_version,
-       failure_threshold, state, created_at, canary_percent, schedule_time, force_upgrade
+       failure_threshold, state, created_at, canary_percent, schedule_time, force_upgrade,
+       COALESCE(target_device_id, '')
 FROM t_release_task
 WHERE task_id = $1
 `, taskID)
@@ -78,6 +83,7 @@ WHERE task_id = $1
 	err := row.Scan(
 		&out.TaskID, &out.PackageID, &out.TargetGroup, &out.ProductModel, &out.HardwareVersion,
 		&out.FailureThreshold, &out.State, &out.CreatedAt, &out.CanaryPercent, &out.ScheduleTime, &out.ForceUpgrade,
+		&out.TargetDeviceID,
 	)
 	return out, err
 }
@@ -91,7 +97,8 @@ type ListMatchingRunningTasksNowParams struct {
 func (q *Queries) ListMatchingRunningTasksNow(ctx context.Context, arg ListMatchingRunningTasksNowParams) ([]TReleaseTask, error) {
 	rows, err := q.db.QueryContext(ctx, `
 SELECT task_id, package_id, target_group, product_model, hardware_version,
-       failure_threshold, state, created_at, canary_percent, schedule_time, force_upgrade
+       failure_threshold, state, created_at, canary_percent, schedule_time, force_upgrade,
+       COALESCE(target_device_id, '')
 FROM t_release_task
 WHERE state = 'Running'
   AND target_group = $1
@@ -120,6 +127,7 @@ ORDER BY created_at DESC
 			&i.CanaryPercent,
 			&i.ScheduleTime,
 			&i.ForceUpgrade,
+			&i.TargetDeviceID,
 		); err != nil {
 			return nil, err
 		}

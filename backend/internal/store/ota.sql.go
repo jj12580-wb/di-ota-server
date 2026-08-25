@@ -113,11 +113,12 @@ INSERT INTO t_package (
   version,
   file_hash,
   signature,
-  status
+  status,
+  name
 ) VALUES (
-  $1, $2, $3, $4, $5, $6
+  $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING package_id, product_code, version, file_hash, signature, status, created_at
+RETURNING package_id, product_code, version, file_hash, signature, status, created_at, name
 `
 
 type CreatePackageParams struct {
@@ -127,6 +128,7 @@ type CreatePackageParams struct {
 	FileHash    string `json:"file_hash"`
 	Signature   string `json:"signature"`
 	Status      string `json:"status"`
+	Name        string `json:"name"`
 }
 
 type CreatePackageRow struct {
@@ -137,6 +139,7 @@ type CreatePackageRow struct {
 	Signature   string    `json:"signature"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
+	Name        string    `json:"name"`
 }
 
 func (q *Queries) CreatePackage(ctx context.Context, arg CreatePackageParams) (CreatePackageRow, error) {
@@ -147,6 +150,7 @@ func (q *Queries) CreatePackage(ctx context.Context, arg CreatePackageParams) (C
 		arg.FileHash,
 		arg.Signature,
 		arg.Status,
+		arg.Name,
 	)
 	var i CreatePackageRow
 	err := row.Scan(
@@ -157,9 +161,11 @@ func (q *Queries) CreatePackage(ctx context.Context, arg CreatePackageParams) (C
 		&i.Signature,
 		&i.Status,
 		&i.CreatedAt,
+		&i.Name,
 	)
 	return i, err
 }
+
 
 const createReleaseTask = `-- name: CreateReleaseTask :one
 INSERT INTO t_release_task (
@@ -270,7 +276,7 @@ func (q *Queries) GetIdempotency(ctx context.Context, idemKey string) (TIdempote
 }
 
 const getPackageByID = `-- name: GetPackageByID :one
-SELECT package_id, product_code, version, file_hash, signature, status, created_at
+SELECT package_id, product_code, version, file_hash, signature, status, created_at, name
 FROM t_package
 WHERE package_id = $1
 `
@@ -283,6 +289,7 @@ type GetPackageByIDRow struct {
 	Signature   string    `json:"signature"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
+	Name        string    `json:"name"`
 }
 
 func (q *Queries) GetPackageByID(ctx context.Context, packageID string) (GetPackageByIDRow, error) {
@@ -296,9 +303,11 @@ func (q *Queries) GetPackageByID(ctx context.Context, packageID string) (GetPack
 		&i.Signature,
 		&i.Status,
 		&i.CreatedAt,
+		&i.Name,
 	)
 	return i, err
 }
+
 
 const getReleaseTaskByID = `-- name: GetReleaseTaskByID :one
 SELECT task_id, package_id, target_group, product_model, hardware_version, failure_threshold, state, created_at
@@ -524,7 +533,7 @@ func (q *Queries) ListMatchingRunningTasks(ctx context.Context, arg ListMatching
 }
 
 const listPackages = `-- name: ListPackages :many
-SELECT package_id, product_code, version, file_hash, signature, status, created_at
+SELECT package_id, product_code, version, file_hash, signature, status, created_at, name
 FROM t_package
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
@@ -543,6 +552,7 @@ type ListPackagesRow struct {
 	Signature   string    `json:"signature"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
+	Name        string    `json:"name"`
 }
 
 func (q *Queries) ListPackages(ctx context.Context, arg ListPackagesParams) ([]ListPackagesRow, error) {
@@ -562,6 +572,7 @@ func (q *Queries) ListPackages(ctx context.Context, arg ListPackagesParams) ([]L
 			&i.Signature,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Name,
 		); err != nil {
 			return nil, err
 		}
@@ -576,10 +587,11 @@ func (q *Queries) ListPackages(ctx context.Context, arg ListPackagesParams) ([]L
 	return items, nil
 }
 
+
 const listReleaseTasks = `-- name: ListReleaseTasks :many
 SELECT rt.task_id, rt.package_id, rt.target_group, rt.product_model,
        rt.hardware_version, rt.failure_threshold, rt.state, rt.created_at,
-       p.product_code, p.version
+       p.product_code, p.version, COALESCE(p.name, '') AS package_alias
 FROM t_release_task rt
 LEFT JOIN t_package p ON rt.package_id = p.package_id
 ORDER BY rt.created_at DESC
@@ -602,6 +614,7 @@ type ListReleaseTasksRow struct {
 	CreatedAt        time.Time      `json:"created_at"`
 	ProductCode      sql.NullString `json:"product_code"`
 	Version          sql.NullString `json:"version"`
+	PackageAlias     string         `json:"package_alias"`
 }
 
 func (q *Queries) ListReleaseTasks(ctx context.Context, arg ListReleaseTasksParams) ([]ListReleaseTasksRow, error) {
@@ -624,6 +637,7 @@ func (q *Queries) ListReleaseTasks(ctx context.Context, arg ListReleaseTasksPara
 			&i.CreatedAt,
 			&i.ProductCode,
 			&i.Version,
+			&i.PackageAlias,
 		); err != nil {
 			return nil, err
 		}
@@ -637,6 +651,7 @@ func (q *Queries) ListReleaseTasks(ctx context.Context, arg ListReleaseTasksPara
 	}
 	return items, nil
 }
+
 
 const listUpgradeRecordsByTask = `-- name: ListUpgradeRecordsByTask :many
 SELECT id, device_id, task_id, status, created_at, source_version, target_version, error_code
@@ -693,7 +708,7 @@ const updatePackageStatus = `-- name: UpdatePackageStatus :one
 UPDATE t_package
 SET status = $2
 WHERE package_id = $1
-RETURNING package_id, product_code, version, file_hash, signature, status, created_at
+RETURNING package_id, product_code, version, file_hash, signature, status, created_at, name
 `
 
 type UpdatePackageStatusParams struct {
@@ -709,6 +724,7 @@ type UpdatePackageStatusRow struct {
 	Signature   string    `json:"signature"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
+	Name        string    `json:"name"`
 }
 
 func (q *Queries) UpdatePackageStatus(ctx context.Context, arg UpdatePackageStatusParams) (UpdatePackageStatusRow, error) {
@@ -722,9 +738,50 @@ func (q *Queries) UpdatePackageStatus(ctx context.Context, arg UpdatePackageStat
 		&i.Signature,
 		&i.Status,
 		&i.CreatedAt,
+		&i.Name,
 	)
 	return i, err
 }
+
+const updatePackageAlias = `-- name: UpdatePackageAlias :one
+UPDATE t_package
+SET name = $2
+WHERE package_id = $1
+RETURNING package_id, product_code, version, file_hash, signature, status, created_at, name
+`
+
+type UpdatePackageAliasParams struct {
+	PackageID string `json:"package_id"`
+	Name      string `json:"name"`
+}
+
+type UpdatePackageAliasRow struct {
+	PackageID   string    `json:"package_id"`
+	ProductCode string    `json:"product_code"`
+	Version     string    `json:"version"`
+	FileHash    string    `json:"file_hash"`
+	Signature   string    `json:"signature"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	Name        string    `json:"name"`
+}
+
+func (q *Queries) UpdatePackageAlias(ctx context.Context, arg UpdatePackageAliasParams) (UpdatePackageAliasRow, error) {
+	row := q.db.QueryRowContext(ctx, updatePackageAlias, arg.PackageID, arg.Name)
+	var i UpdatePackageAliasRow
+	err := row.Scan(
+		&i.PackageID,
+		&i.ProductCode,
+		&i.Version,
+		&i.FileHash,
+		&i.Signature,
+		&i.Status,
+		&i.CreatedAt,
+		&i.Name,
+	)
+	return i, err
+}
+
 
 const updateReleaseTaskState = `-- name: UpdateReleaseTaskState :one
 UPDATE t_release_task

@@ -57,7 +57,7 @@ export function DeviceSecretsPage() {
   };
 
   return (
-    <div className="ota-page">
+    <div className="ota-page ota-page-fill">
       <Alert
         type="warning"
         showIcon

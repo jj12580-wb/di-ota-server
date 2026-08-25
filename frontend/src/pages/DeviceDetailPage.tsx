@@ -53,7 +53,7 @@ export function DeviceDetailPage() {
 
   if (!device) {
     return (
-      <div className="ota-page">
+      <div className="ota-page ota-page-fill">
         <Card className="ota-card">
           <Space direction="vertical">
             <Title level={4}>设备不存在</Title>
@@ -70,7 +70,7 @@ export function DeviceDetailPage() {
   const flags = device.inconsistency_flags ?? [];
 
   return (
-    <div className="ota-page">
+    <div className="ota-page ota-page-fill">
       <Breadcrumb
         style={{ marginBottom: 16 }}
         items={[

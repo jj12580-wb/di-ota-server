@@ -5,14 +5,15 @@ INSERT INTO t_package (
   version,
   file_hash,
   signature,
-  status
+  status,
+  name
 ) VALUES (
-  $1, $2, $3, $4, $5, $6
+  $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING package_id, product_code, version, file_hash, signature, status, created_at;
+RETURNING package_id, product_code, version, file_hash, signature, status, created_at, name;
 
 -- name: GetPackageByID :one
-SELECT package_id, product_code, version, file_hash, signature, status, created_at
+SELECT package_id, product_code, version, file_hash, signature, status, created_at, name
 FROM t_package
 WHERE package_id = $1;
 
@@ -107,7 +108,7 @@ FROM t_idempotency
 WHERE idem_key = $1;
 
 -- name: ListPackages :many
-SELECT package_id, product_code, version, file_hash, signature, status, created_at
+SELECT package_id, product_code, version, file_hash, signature, status, created_at, name
 FROM t_package
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
@@ -119,12 +120,18 @@ SELECT COUNT(*) FROM t_package;
 UPDATE t_package
 SET status = $2
 WHERE package_id = $1
-RETURNING package_id, product_code, version, file_hash, signature, status, created_at;
+RETURNING package_id, product_code, version, file_hash, signature, status, created_at, name;
+
+-- name: UpdatePackageAlias :one
+UPDATE t_package
+SET name = $2
+WHERE package_id = $1
+RETURNING package_id, product_code, version, file_hash, signature, status, created_at, name;
 
 -- name: ListReleaseTasks :many
 SELECT rt.task_id, rt.package_id, rt.target_group, rt.product_model,
        rt.hardware_version, rt.failure_threshold, rt.state, rt.created_at,
-       p.product_code, p.version
+       p.product_code, p.version, COALESCE(p.name, '') AS package_alias
 FROM t_release_task rt
 LEFT JOIN t_package p ON rt.package_id = p.package_id
 ORDER BY rt.created_at DESC

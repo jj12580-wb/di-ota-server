@@ -1,0 +1,61 @@
+# iot.map360.cn 端口与安全覆盖（对齐现网 nginx 5179/9080）
+services:
+  ota-api:
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      GOPROXY: https://goproxy.cn,direct
+      NO_PROXY: minio,localhost,127.0.0.1,postgres,redis,rabbitmq,keycloak
+      no_proxy: minio,localhost,127.0.0.1,postgres,redis,rabbitmq,keycloak
+    ports: !override
+      - "9080:8080"
+
+  ota-worker:
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      GOPROXY: https://goproxy.cn,direct
+      NO_PROXY: minio,localhost,127.0.0.1,postgres,redis,rabbitmq,keycloak
+      no_proxy: minio,localhost,127.0.0.1,postgres,redis,rabbitmq,keycloak
+
+  postgres:
+    security_opt:
+      - seccomp:unconfined
+    ports: !override
+      - "9432:5432"
+
+  redis:
+    security_opt:
+      - seccomp:unconfined
+    ports: !override
+      - "9379:6379"
+
+  rabbitmq:
+    security_opt:
+      - seccomp:unconfined
+    ports: !override
+      - "5632:5672"
+      - "15632:15672"
+
+  keycloak:
+    security_opt:
+      - seccomp:unconfined
+    ports: !override
+      - "18089:8080"
+
+  minio:
+    security_opt:
+      - seccomp:unconfined
+    ports: !override
+      - "9009:9000"
+      - "9091:9001"
+
+  minio-init:
+    security_opt:
+      - seccomp:unconfined
+
+  ota-console:
+    security_opt:
+      - seccomp:unconfined
+    ports: !override
+      - "5179:5173"

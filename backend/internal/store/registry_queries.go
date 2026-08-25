@@ -222,6 +222,24 @@ WHERE device_group = $1 AND product_model = $2 AND hardware_version = $3
 	return out, rows.Err()
 }
 
+// ListDeviceIDsForPinnedTaskSnapshot returns the single active device when task pins target_device_id.
+func (q *Queries) ListDeviceIDsForPinnedTaskSnapshot(ctx context.Context, deviceID, group, productModel, hardwareVersion string) ([]string, error) {
+	row := q.db.QueryRowContext(ctx, `
+SELECT device_id FROM t_device
+WHERE device_id = $1
+  AND device_group = $2 AND product_model = $3 AND hardware_version = $4
+  AND eligibility_state = 'active'
+`, deviceID, group, productModel, hardwareVersion)
+	var id string
+	if err := row.Scan(&id); err != nil {
+		if err == sql.ErrNoRows {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+	return []string{id}, nil
+}
+
 func (q *Queries) ListDeviceCatalog(ctx context.Context, limit, offset int32) ([]DeviceRegistry, error) {
 	return q.ListDeviceCatalogFiltered(ctx, ListDeviceCatalogFilter{Limit: limit, Offset: offset})
 }
@@ -313,7 +331,8 @@ SELECT 1 FROM t_task_target WHERE task_id = $1 AND device_id = $2
 func (q *Queries) ListRunningTasksForDevice(ctx context.Context, deviceID string) ([]TReleaseTask, error) {
 	rows, err := q.db.QueryContext(ctx, `
 SELECT t.task_id, t.package_id, t.target_group, t.product_model, t.hardware_version,
-       t.failure_threshold, t.state, t.created_at, t.canary_percent, t.schedule_time, t.force_upgrade
+       t.failure_threshold, t.state, t.created_at, t.canary_percent, t.schedule_time, t.force_upgrade,
+       COALESCE(t.target_device_id, '')
 FROM t_release_task t
 JOIN t_task_target tt ON tt.task_id = t.task_id AND tt.device_id = $1
 WHERE t.state = 'Running'
@@ -330,6 +349,7 @@ ORDER BY t.force_upgrade DESC, t.created_at DESC
 		if err := rows.Scan(
 			&i.TaskID, &i.PackageID, &i.TargetGroup, &i.ProductModel, &i.HardwareVersion,
 			&i.FailureThreshold, &i.State, &i.CreatedAt, &i.CanaryPercent, &i.ScheduleTime, &i.ForceUpgrade,
+			&i.TargetDeviceID,
 		); err != nil {
 			return nil, err
 		}

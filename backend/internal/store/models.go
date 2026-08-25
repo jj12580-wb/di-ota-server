@@ -70,6 +70,7 @@ type TReleaseTask struct {
 	CanaryPercent    int32        `json:"canary_percent"`
 	ScheduleTime     sql.NullTime `json:"schedule_time"`
 	ForceUpgrade     bool         `json:"force_upgrade"`
+	TargetDeviceID   string       `json:"target_device_id"`
 }
 
 type TTaskStat struct {

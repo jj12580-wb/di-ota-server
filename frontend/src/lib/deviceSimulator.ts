@@ -36,7 +36,7 @@ function formatDeviceApiError(parsed: ApiEnvelope): DeviceApiError {
   if (parsed.code === 2005 && data?.previous && data?.current) {
     return new DeviceApiError(
       parsed.code,
-      `该任务当前状态为 ${data.previous}，无法回退上报 ${data.current}。请新建发布任务，或更换 device_id 后重试。`,
+      `该任务当前状态为 ${data.previous}，无法回退上报 ${data.current}。请在任务中心新建任务，或更换 device_id 后重试。`,
       data,
     );
   }
@@ -166,7 +166,7 @@ export function describeNoUpdate(data: CheckUpdateData | undefined): string {
       : '服务端认定设备已是最新版本。重复联调请发布更高版本包并创建新 Running 任务。';
   }
   if (reason === 'no_running_task') {
-    return '无 Running 任务或未命中任务快照，请先在管理台创建并启动发布任务。';
+    return '无 Running 任务或未命中任务快照，请先在任务中心创建并启动任务。';
   }
   return `无可用升级（${reason}）`;
 }

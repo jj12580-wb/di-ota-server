@@ -82,26 +82,58 @@ export function listTableScroll<T>(
   rowCount: number,
   extraWidth = 0,
 ): TableProps['scroll'] {
-  return rowCount > 0 ? { x: measureTableScrollX(columns) + extraWidth } : undefined;
+  if (rowCount <= 0) return undefined;
+  return {
+    x: measureTableScrollX(columns) + extraWidth,
+    y: 'calc(100vh - 280px)',
+  };
 }
+
+/** 列表页统一分页：10 / 20 / 50，默认 50，底部展示共 N 条 */
+export const LIST_PAGE_SIZE_OPTIONS = ['10', '20', '50'] as const;
+export const LIST_DEFAULT_PAGE_SIZE = 50;
 
 /** 服务端分页列表通用配置 */
 export function serverTablePagination(
   page: number,
   pageSize: number,
   total: number,
-  onChange: (page: number) => void,
+  onChange: (page: number, nextPageSize?: number) => void,
+  options?: {
+    pageSizeOptions?: Array<string | number>;
+    showSizeChanger?: boolean;
+  },
 ): NonNullable<TableProps['pagination']> {
+  const showSizeChanger = options?.showSizeChanger ?? true;
   return {
     current: page,
     pageSize,
     total,
-    showSizeChanger: false,
+    showSizeChanger,
+    pageSizeOptions: options?.pageSizeOptions ?? [...LIST_PAGE_SIZE_OPTIONS],
+    showTotal: (n) => `共 ${n} 条`,
+    position: ['bottomRight'],
     onChange,
+    onShowSizeChange: showSizeChanger
+      ? (_current, size) => onChange(1, size)
+      : undefined,
   };
 }
 
 /** 客户端分页列表通用配置 */
-export function clientTablePagination(pageSize = 12): NonNullable<TableProps['pagination']> {
-  return { pageSize, showSizeChanger: false };
+export function clientTablePagination(
+  pageSize = LIST_DEFAULT_PAGE_SIZE,
+  options?: {
+    pageSizeOptions?: Array<string | number>;
+    showSizeChanger?: boolean;
+  },
+): NonNullable<TableProps['pagination']> {
+  const showSizeChanger = options?.showSizeChanger ?? true;
+  return {
+    pageSize,
+    showSizeChanger,
+    pageSizeOptions: options?.pageSizeOptions ?? [...LIST_PAGE_SIZE_OPTIONS],
+    showTotal: (n) => `共 ${n} 条`,
+    position: ['bottomRight'],
+  };
 }

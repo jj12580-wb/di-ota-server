@@ -24,6 +24,13 @@ body {
 
 #root {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.ota-shell {
+  flex: 1;
+  min-height: 100vh;
 }
 
 .ota-shell .ant-layout-sider {
@@ -160,18 +167,107 @@ body {
   font-size: 11px;
 }
 
+.ota-shell > .ant-layout {
+  flex: 1;
+  min-height: 100vh;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ota-shell-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 14px !important;
+}
+
 .ota-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 1320px;
-  margin: 0 auto;
+  gap: 8px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.ota-page-fill {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
 }
 
 .ota-card {
   border-radius: 14px;
   border: 1px solid var(--border-soft);
   box-shadow: var(--shadow-soft);
+}
+
+.ota-card-dense.ant-card .ant-card-body,
+.ota-card-list.ant-card .ant-card-body {
+  padding: 12px 14px;
+}
+
+.ota-card-list.ant-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ota-card-list.ant-card > .ant-card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ota-page-fill .ota-toolbar {
+  margin-bottom: 8px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ota-page-fill .ota-list-table .ant-table-thead > tr > th,
+.ota-page-fill .ota-list-table .ant-table-tbody > tr > td {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+/* 表格撑满卡片，分页固定贴底 */
+.ota-card-list .ant-table-wrapper,
+.ota-card-list .ant-spin-nested-loading,
+.ota-card-list .ant-spin-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ota-card-list .ant-table {
+  flex: 1;
+  min-height: 0;
+}
+
+.ota-card-list .ant-table-container {
+  height: 100%;
+}
+
+.ota-card-list .ant-table-body {
+  overflow: auto !important;
+}
+
+.ota-card-list .ant-pagination,
+.ota-page-fill .ant-pagination {
+  margin: auto 0 0 !important;
+  padding-top: 10px;
+  flex-shrink: 0;
 }
 
 .ota-toolbar {
@@ -468,6 +564,45 @@ body {
 
 .ota-simulator-footer span:last-child {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* 列表列宽拖拽把手 */
+.ota-list-table .ota-table-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  z-index: 2;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.ota-list-table .ota-table-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.ota-list-table .ant-table-thead > tr > th:hover .ota-table-resize-handle::after,
+.ota-list-table .ota-table-resize-handle:hover::after {
+  background: rgba(22, 119, 255, 0.45);
+}
+
+body.ota-col-resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+body.ota-col-resizing iframe {
+  pointer-events: none;
 }
 
 .ota-table-fixed-col {

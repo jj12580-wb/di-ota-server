@@ -216,7 +216,21 @@ func removeFlag(flags []string, code string) []string {
 }
 
 func buildTaskSnapshot(ctx context.Context, q *store.Queries, task store.TReleaseTask) (int, error) {
-	ids, err := q.ListDeviceIDsForTaskSnapshot(ctx, task.TargetGroup, task.ProductModel, task.HardwareVersion)
+	var (
+		ids []string
+		err error
+	)
+	if strings.TrimSpace(task.TargetDeviceID) != "" {
+		ids, err = q.ListDeviceIDsForPinnedTaskSnapshot(
+			ctx,
+			strings.TrimSpace(task.TargetDeviceID),
+			task.TargetGroup,
+			task.ProductModel,
+			task.HardwareVersion,
+		)
+	} else {
+		ids, err = q.ListDeviceIDsForTaskSnapshot(ctx, task.TargetGroup, task.ProductModel, task.HardwareVersion)
+	}
 	if err != nil {
 		return 0, err
 	}

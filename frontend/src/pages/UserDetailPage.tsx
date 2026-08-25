@@ -93,7 +93,7 @@ export function UserDetailPage() {
   };
 
   return (
-    <div className="ota-page">
+    <div className="ota-page ota-page-fill">
       <Breadcrumb
         items={[
           { title: <a onClick={() => navigate('/users')}>用户管理</a> },

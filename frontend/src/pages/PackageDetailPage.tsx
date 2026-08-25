@@ -16,14 +16,15 @@ export function PackageDetailPage() {
   if (!pkg) return null;
 
   return (
-    <div className="ota-page">
+    <div className="ota-page ota-page-fill">
       <Breadcrumb style={{ marginBottom: 16 }} items={[
         { title: <a onClick={() => navigate('/packages')}>固件包</a> },
-        { title: pkg.package_id },
+        { title: pkg.alias || pkg.name || pkg.package_id },
       ]} />
       <Card title="包信息" className="ota-card">
         <Descriptions bordered column={{ xs: 1, sm: 2 }}>
           <Descriptions.Item label="包 ID">{pkg.package_id}</Descriptions.Item>
+          <Descriptions.Item label="别名">{pkg.alias || pkg.name || '-'}</Descriptions.Item>
           <Descriptions.Item label="状态"><Tag>{pkg.status}</Tag></Descriptions.Item>
           <Descriptions.Item label="产品代码">{pkg.product_code}</Descriptions.Item>
           <Descriptions.Item label="版本">{pkg.version}</Descriptions.Item>

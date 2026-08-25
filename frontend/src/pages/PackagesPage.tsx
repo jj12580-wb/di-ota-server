@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Form, Input, Select, Space, message, Modal, Table, Tag, Upload } from 'antd';
 import type { UploadFile } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { Package, packageAPI } from '../api';
+import { packageLabel } from '../utils/packageLabel';
 import { tableActionColumn, listTableProps, listTableScroll, clientTablePagination } from '../utils/tableActionColumn';
 import { tableIdLinkColumn } from '../utils/tableIdLinkColumn';
 import { tableEllipsisColumn, tableCompactColumn } from '../utils/tableEllipsisColumn';
+import { useResizableColumns } from '../utils/useResizableColumns';
 
 const statusColor: Record<string, string> = {
   Published: 'green',
@@ -77,6 +79,7 @@ export function PackagesPage() {
   useEffect(() => { load(); }, []);
 
   const handleUpload = async (values: {
+    alias?: string;
     product_code: string;
     version: string;
     file_hash?: string;
@@ -115,6 +118,7 @@ export function PackagesPage() {
         file_hash: fileHash,
         signature,
         file_size: file.size,
+        alias: values.alias?.trim() || undefined,
       });
 
       message.success('上传成功');
@@ -130,7 +134,7 @@ export function PackagesPage() {
 
   const handleDeprecate = (pkg: Package) => {
     Modal.confirm({
-      title: `下架固件包 ${pkg.package_id}?`,
+      title: `下架固件包 ${packageLabel(pkg)}?`,
       onOk: async () => {
         try {
           await packageAPI.updateStatus(pkg.package_id, 'Deprecated');
@@ -143,45 +147,52 @@ export function PackagesPage() {
     });
   };
 
-  const columns = [
-    tableIdLinkColumn<Package>('包 ID', 'package_id', (id) => navigate(`/packages/${id}`)),
-    tableEllipsisColumn<Package>('产品代码', 'product_code'),
-    tableEllipsisColumn<Package>('版本', 'version'),
-    tableCompactColumn<Package>('状态', 'status', (v: string) => <Tag color={statusColor[v]}>{v}</Tag>, 'status'),
-    tableEllipsisColumn<Package>('创建时间', 'created_at', {
-      size: 'date',
-      render: (v) => new Date(String(v)).toLocaleString(),
-    }),
-    tableActionColumn<Package>(
-      (_, r) => (
-        r.status === 'Published' ? (
-          <Space size={4} className="ota-table-actions">
-            <Button type="link" size="small" onClick={() => handleDeprecate(r)}>下架</Button>
-          </Space>
-        ) : null
+  const baseColumns = useMemo(
+    () => [
+      tableIdLinkColumn<Package>('包 ID', 'package_id', (id) => navigate(`/packages/${id}`)),
+      tableEllipsisColumn<Package>('别名', 'alias', {
+        render: (_: unknown, r: Package) => (r.alias || r.name || '-'),
+      }),
+      tableEllipsisColumn<Package>('产品代码', 'product_code'),
+      tableEllipsisColumn<Package>('版本', 'version'),
+      tableCompactColumn<Package>('状态', 'status', (v: string) => <Tag color={statusColor[v]}>{v}</Tag>, 'status'),
+      tableEllipsisColumn<Package>('创建时间', 'created_at', {
+        size: 'date',
+        render: (v) => new Date(String(v)).toLocaleString(),
+      }),
+      tableActionColumn<Package>(
+        (_, r) => (
+          r.status === 'Published' ? (
+            <Space size={4} className="ota-table-actions">
+              <Button type="link" size="small" onClick={() => handleDeprecate(r)}>下架</Button>
+            </Space>
+          ) : null
+        ),
+        { actionLabels: ['下架'] },
       ),
-      { actionLabels: ['下架'] },
-    ),
-  ];
+    ],
+    [navigate],
+  );
+  const { columns, components: tableComponents } = useResizableColumns(baseColumns, 'ota.table.packages');
 
   const filteredPackages = packages.filter((p) => {
     if (statusFilter && p.status !== statusFilter) return false;
     if (!keyword.trim()) return true;
     const key = keyword.toLowerCase();
-    return [p.package_id, p.product_code, p.version].join(' ').toLowerCase().includes(key);
+    return [p.package_id, p.alias || '', p.name || '', p.product_code, p.version].join(' ').toLowerCase().includes(key);
   });
 
   return (
-    <div className="ota-page">
+    <div className="ota-page ota-page-fill">
       <Card
-        className="ota-card"
+        className="ota-card ota-card-dense ota-card-list"
         extra={<Button type="primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>上传固件包</Button>}
       >
         <div className="ota-toolbar">
           <div className="ota-toolbar-left">
             <Input.Search
               allowClear
-              placeholder="搜索包ID/产品代码/版本"
+              placeholder="搜索包ID/别名/产品代码/版本"
               className="ota-toolbar-control-search"
               onSearch={setKeyword}
               onChange={(e) => setKeyword(e.target.value)}
@@ -201,16 +212,16 @@ export function PackagesPage() {
               ]}
             />
           </div>
-          <span className="ota-muted">共 {filteredPackages.length} 条</span>
         </div>
 
         <Table
           {...listTableProps}
           columns={columns}
+          components={tableComponents}
           dataSource={filteredPackages}
           loading={loading}
           rowKey="package_id"
-          pagination={clientTablePagination(12)}
+          pagination={clientTablePagination()}
           scroll={listTableScroll(columns, filteredPackages.length)}
         />
 
@@ -222,6 +233,9 @@ export function PackagesPage() {
           footer={null}
         >
           <Form form={form} layout="vertical" onFinish={handleUpload}>
+            <Form.Item name="alias" label="别名" rules={[{ required: true, message: '请填写固件包别名' }]}>
+              <Input placeholder="如 客厅摄像头正式包 v2.4" maxLength={128} />
+            </Form.Item>
             <Form.Item name="product_code" label="产品代码" rules={[{ required: true }]}>
               <Input placeholder="如 AMS" />
             </Form.Item>

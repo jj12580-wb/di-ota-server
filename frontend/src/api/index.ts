@@ -14,11 +14,15 @@ export interface Package {
   signature: string;
   status: string;
   created_at: string;
+  alias?: string;
+  name?: string;
 }
 
 export interface ReleaseTask {
   task_id: string;
   package_id: string;
+  package_alias?: string;
+  device_id?: string;
   target_group: string;
   product_model: string;
   hardware_version: string;
@@ -171,10 +175,12 @@ export const packageAPI = {
     wrap<{ package_id: string; upload_url: string; object_key: string; expires_at: number; required_headers: Record<string, string> }>(
       api.post('/packages/upload-url', params)
     ),
-  complete: (params: { package_id: string; product_code: string; version: string; file_hash: string; signature: string; file_size: number }) =>
+  complete: (params: { package_id: string; product_code: string; version: string; file_hash: string; signature: string; file_size: number; alias?: string }) =>
     wrap<Package>(api.post('/packages/complete', params)),
   updateStatus: (id: string, status: string) =>
     wrap<Package>(api.patch(`/packages/${id}/status`, { status })),
+  updateAlias: (id: string, alias: string) =>
+    wrap<Package>(api.patch(`/packages/${id}/alias`, { alias })),
 };
 
 export const taskAPI = {
@@ -188,6 +194,7 @@ export const taskAPI = {
     ),
   create: (params: {
     package_id: string;
+    device_id?: string;
     group: string;
     product_model: string;
     hardware_version: string;
@@ -234,7 +241,21 @@ export const deviceAPI = {
     );
   },
   downloadTemplate: () => api.get('/devices/csv-template', { responseType: 'blob' }),
+  create: (payload: DeviceUpsertPayload) =>
+    wrap<DeviceCatalogItem>(api.post('/devices', payload)),
+  update: (id: string, payload: Omit<DeviceUpsertPayload, 'device_id'>) =>
+    wrap<DeviceCatalogItem>(api.put(`/devices/${id}`, payload)),
 };
+
+export interface DeviceUpsertPayload {
+  device_id: string;
+  product_code?: string;
+  product_model: string;
+  hardware_version: string;
+  current_version?: string;
+  device_group?: string;
+  tags?: Record<string, unknown>;
+}
 
 export interface DeviceSecretCSVImportResult {
   total_rows: number;
@@ -293,6 +314,30 @@ export interface ProductModelPolicy {
   explicit?: boolean;
 }
 
+export interface UpgradePolicy {
+  policy_id: string;
+  device_id?: string;
+  product_code?: string;
+  product_model?: string;
+  hardware_version?: string;
+  device_group?: string;
+  current_version?: string;
+  report_status_mode: 'relaxed' | 'strict' | string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  updated_by?: string;
+}
+
+export type UpgradePolicyInput = {
+  device_id?: string;
+  product_code?: string;
+  product_model?: string;
+  hardware_version?: string;
+  device_group?: string;
+  current_version?: string;
+  report_status_mode: string;
+};
+
 export const productModelPolicyAPI = {
   list: () =>
     wrap<{ default_mode: string; policies: ProductModelPolicy[] }>(
@@ -304,6 +349,19 @@ export const productModelPolicyAPI = {
         report_status_mode: reportStatusMode,
       })
     ),
+};
+
+export const upgradePolicyAPI = {
+  list: () =>
+    wrap<{ default_mode: string; policies: UpgradePolicy[] }>(
+      api.get('/upgrade-policies')
+    ),
+  create: (payload: UpgradePolicyInput) =>
+    wrap<UpgradePolicy>(api.post('/upgrade-policies', payload)),
+  update: (policyId: string, payload: UpgradePolicyInput) =>
+    wrap<UpgradePolicy>(api.put(`/upgrade-policies/${encodeURIComponent(policyId)}`, payload)),
+  remove: (policyId: string) =>
+    wrap<unknown>(api.delete(`/upgrade-policies/${encodeURIComponent(policyId)}`)),
 };
 
 export const dashboardAPI = {

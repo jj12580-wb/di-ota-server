@@ -166,11 +166,7 @@ func handleReportStatusRequest(c *gin.Context, cfg *config.Config, q *store.Quer
 }
 
 func resolveReportStatusMode(ctx context.Context, q *store.Queries, deviceID string) string {
-	dev, err := q.GetDeviceRegistry(ctx, deviceID)
-	if err != nil {
-		return store.ReportStatusModeRelaxed
-	}
-	mode, err := q.GetReportStatusMode(ctx, dev.ProductModel)
+	mode, err := q.ResolveUpgradePolicyMode(ctx, deviceID)
 	if err != nil {
 		return store.ReportStatusModeRelaxed
 	}

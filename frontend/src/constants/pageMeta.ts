@@ -26,7 +26,7 @@ const LIST_META: Record<string, PageMeta> = {
     subtitle: '上传、查看和下架发布包，保证版本流转可追踪。',
   },
   '/tasks': {
-    title: '发布任务',
+    title: '任务中心',
     subtitle: '配置灰度策略与执行窗口，实时控制任务流转。',
   },
   '/upgrade-policy': {

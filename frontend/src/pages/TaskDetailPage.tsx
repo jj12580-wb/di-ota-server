@@ -72,9 +72,9 @@ export function TaskDetailPage() {
   ];
 
   return (
-    <div className="ota-page">
+    <div className="ota-page ota-page-fill">
       <Breadcrumb style={{ marginBottom: 16 }} items={[
-        { title: <a onClick={() => navigate('/tasks')}>发布任务</a> },
+        { title: <a onClick={() => navigate('/tasks')}>任务中心</a> },
         { title: task.task_id },
       ]} />
 
@@ -84,7 +84,12 @@ export function TaskDetailPage() {
             <Descriptions.Item label="任务 ID">{task.task_id}</Descriptions.Item>
             <Descriptions.Item label="状态"><Tag color={stateColor[task.state]}>{task.state}</Tag></Descriptions.Item>
             <Descriptions.Item label="创建时间">{new Date(task.created_at).toLocaleString()}</Descriptions.Item>
-            <Descriptions.Item label="固件包">{task.package_id}</Descriptions.Item>
+            <Descriptions.Item label="固件包">
+              {task.package_alias
+                ? `${task.package_alias}（${task.package_id}）`
+                : task.package_id}
+            </Descriptions.Item>
+            <Descriptions.Item label="指定设备">{task.device_id || '—'}</Descriptions.Item>
             <Descriptions.Item label="目标分组">{task.target_group}</Descriptions.Item>
             <Descriptions.Item label="产品型号">{task.product_model}</Descriptions.Item>
             <Descriptions.Item label="硬件版本">{task.hardware_version}</Descriptions.Item>

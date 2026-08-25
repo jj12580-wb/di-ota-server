@@ -512,7 +512,7 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				return
 			}
 			count, _ := q.CountPackages(c.Request.Context())
-			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"packages": packages, "total": count}})
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"packages": mapListPackagesRows(packages), "total": count}})
 		})
 
 		api.GET("/packages/:package_id", func(c *gin.Context) {
@@ -534,7 +534,7 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "query package failed"})
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": pkg})
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": mapGetPackageByIDRow(pkg)})
 		})
 
 		api.GET("/devices", func(c *gin.Context) {
@@ -568,6 +568,10 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"devices": mapDeviceRegistryList(devices), "total": count}})
+		})
+
+		api.POST("/devices", func(c *gin.Context) {
+			createDeviceManual(c, q)
 		})
 
 		api.GET("/devices/csv-template", func(c *gin.Context) {
@@ -742,6 +746,10 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": mapDeviceRegistry(device)})
 		})
 
+		api.PUT("/devices/:device_id", func(c *gin.Context) {
+			updateDeviceManual(c, q)
+		})
+
 		api.PUT("/devices/:device_id/device-secret", func(c *gin.Context) {
 			if _, ok := requireSecretAdmin(c, cfg, q); !ok {
 				return
@@ -800,7 +808,42 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "update package status failed"})
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": pkg})
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": mapUpdatePackageStatusRow(pkg)})
+		})
+
+		
+		api.PATCH("/packages/:package_id/alias", func(c *gin.Context) {
+			if !hasBearer(c.GetHeader("Authorization")) {
+				c.JSON(http.StatusUnauthorized, gin.H{"code": 1001, "message": "unauthorized"})
+				return
+			}
+			packageID := strings.TrimSpace(c.Param("package_id"))
+			if packageID == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "package_id is required"})
+				return
+			}
+			var req struct {
+				Alias string `json:"alias"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid request"})
+				return
+			}
+			alias := strings.TrimSpace(req.Alias)
+			if alias == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "alias is required"})
+				return
+			}
+			pkg, err := q.UpdatePackageAlias(c.Request.Context(), store.UpdatePackageAliasParams{PackageID: packageID, Name: alias})
+			if err != nil {
+				if err == sql.ErrNoRows {
+					c.JSON(http.StatusNotFound, gin.H{"code": 2002, "message": "package not found"})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "update package alias failed"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": mapUpdatePackageAliasRow(pkg)})
 		})
 
 		api.POST("/packages", func(c *gin.Context) {
@@ -814,6 +857,7 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				Version     string `json:"version"`
 				FileHash    string `json:"file_hash"`
 				Signature   string `json:"signature"`
+				Alias       string `json:"alias"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid request"})
@@ -832,13 +876,14 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				FileHash:    req.FileHash,
 				Signature:   req.Signature,
 				Status:      "Published",
+				Name:        strings.TrimSpace(req.Alias),
 			})
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "create package failed"})
 				return
 			}
 
-			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": record})
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": mapCreatePackageRow(record)})
 		})
 
 		api.POST("/packages/upload-url", func(c *gin.Context) {
@@ -902,6 +947,7 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				FileHash    string `json:"file_hash"`
 				Signature   string `json:"signature"`
 				FileSize    int64  `json:"file_size"`
+				Alias       string `json:"alias"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid request"})
@@ -924,13 +970,14 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				FileHash:    req.FileHash,
 				Signature:   req.Signature,
 				Status:      "Published",
+				Name:        strings.TrimSpace(req.Alias),
 			})
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "create package failed"})
 				return
 			}
 
-			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": record})
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": mapCreatePackageRow(record)})
 		})
 
 		api.GET("/release-tasks", func(c *gin.Context) {
@@ -982,7 +1029,13 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 			if statsErr == nil {
 				statsData = stats
 			}
-			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"task": mapTReleaseTask(task), "stats": statsData}})
+			taskData := mapTReleaseTask(task)
+			if pkgRow, pkgErr := q.GetPackageByID(c.Request.Context(), task.PackageID); pkgErr == nil {
+				taskData["package_alias"] = pkgRow.Name
+				taskData["product_code"] = pkgRow.ProductCode
+				taskData["version"] = pkgRow.Version
+			}
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"task": taskData, "stats": statsData}})
 		})
 
 		api.POST("/release-tasks", func(c *gin.Context) {
@@ -993,6 +1046,7 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 
 			var req struct {
 				PackageID        string  `json:"package_id"`
+				DeviceID         string  `json:"device_id"`
 				Group            string  `json:"group"`
 				ProductModel     string  `json:"product_model"`
 				HardwareVersion  string  `json:"hardware_version"`
@@ -1006,8 +1060,37 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "invalid request"})
 				return
 			}
-			if req.PackageID == "" || req.Group == "" || req.ProductModel == "" || req.HardwareVersion == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "package_id/group/product_model/hardware_version are required"})
+
+			targetDeviceID := strings.TrimSpace(req.DeviceID)
+			group := strings.TrimSpace(req.Group)
+			productModel := strings.TrimSpace(req.ProductModel)
+			hardwareVersion := strings.TrimSpace(req.HardwareVersion)
+
+			if targetDeviceID != "" {
+				dev, err := q.GetDeviceRegistry(c.Request.Context(), targetDeviceID)
+				if err != nil {
+					if err == sql.ErrNoRows {
+						c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "device not found"})
+						return
+					}
+					c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "query device failed"})
+					return
+				}
+				if strings.TrimSpace(dev.EligibilityState) != "" && !strings.EqualFold(dev.EligibilityState, "active") {
+					c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "device is not active"})
+					return
+				}
+				group = strings.TrimSpace(dev.DeviceGroup)
+				productModel = strings.TrimSpace(dev.ProductModel)
+				hardwareVersion = strings.TrimSpace(dev.HardwareVersion)
+				if group == "" || productModel == "" || hardwareVersion == "" {
+					c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "device missing group/product_model/hardware_version"})
+					return
+				}
+			}
+
+			if req.PackageID == "" || group == "" || productModel == "" || hardwareVersion == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 1002, "message": "package_id/group/product_model/hardware_version are required (or provide device_id)"})
 				return
 			}
 
@@ -1050,14 +1133,15 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 			task, err := q.CreateReleaseTaskExt(c.Request.Context(), store.CreateReleaseTaskExtParams{
 				TaskID:           id,
 				PackageID:        req.PackageID,
-				TargetGroup:      req.Group,
-				ProductModel:     req.ProductModel,
-				HardwareVersion:  req.HardwareVersion,
+				TargetGroup:      group,
+				ProductModel:     productModel,
+				HardwareVersion:  hardwareVersion,
 				FailureThreshold: fmt.Sprintf("%.4f", req.FailureThreshold),
 				State:            initialState,
 				CanaryPercent:    req.CanaryPercent,
 				ScheduleTime:     schedule,
 				ForceUpgrade:     req.ForceUpgrade,
+				TargetDeviceID:   targetDeviceID,
 			})
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "create task failed"})
@@ -1138,12 +1222,12 @@ func NewRouter(cfg *config.Config, q *store.Queries) *gin.Engine {
 				return
 			}
 			if afterTask.State == "Running" {
-				if _, err := buildTaskSnapshot(c.Request.Context(), q, store.TReleaseTask{
-					TaskID:          afterTask.TaskID,
-					TargetGroup:     afterTask.TargetGroup,
-					ProductModel:    afterTask.ProductModel,
-					HardwareVersion: afterTask.HardwareVersion,
-				}); err != nil {
+				fullForSnapshot, snapErr := q.GetReleaseTaskExt(c.Request.Context(), taskID)
+				if snapErr != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "query task failed"})
+					return
+				}
+				if _, err := buildTaskSnapshot(c.Request.Context(), q, fullForSnapshot); err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "build task snapshot failed"})
 					return
 				}
