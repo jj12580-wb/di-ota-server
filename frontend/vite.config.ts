@@ -1,22 +1,24 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// iot.map360.cn 根路径部署：nginx 把 / 转到本服务、/api/ 转到 ota-api:9080
+// 经 ams.map360.cn / iot.map360.cn 的 nginx 反代访问时，必须放行 Host
 export default defineConfig({
-  base: '/',
+  base: '/ota/',
   plugins: [react()],
   server: {
     port: 5173,
     host: '0.0.0.0',
     allowedHosts: true,
     proxy: {
-      '/api': {
+      '/ota/api': {
         target: 'http://ota-api:8080',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ota/, ''),
       },
-      '/device': {
+      '/ota/device': {
         target: 'http://ota-api:8080',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ota/, ''),
       },
     },
   },
