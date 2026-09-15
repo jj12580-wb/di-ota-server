@@ -1,0 +1,22 @@
+# OTA 前端依赖基准镜像：预装 npm 依赖，不含业务构建产物。
+# 业务构建可 FROM 此镜像后 COPY 源码再 npm run build。
+#
+# 构建并推送:
+#   docker build -f Dockerfile.basic -t harbor.map360.cn:30002/ams/ota-frontend:basic .
+#   docker push harbor.map360.cn:30002/ams/ota-frontend:basic
+
+ARG NODE_BASE_IMAGE=docker.1panel.live/library/node:20-bookworm
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
+
+FROM ${NODE_BASE_IMAGE}
+
+ARG NPM_REGISTRY
+ARG APT_MIRROR
+WORKDIR /app
+
+RUN sed -i "s/deb.debian.org/${APT_MIRROR}/g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i "s/deb.debian.org/${APT_MIRROR}/g" /etc/apt/sources.list || true
+
+COPY package.json package-lock.json ./
+RUN npm config set registry "${NPM_REGISTRY}" && npm ci

@@ -1,0 +1,27 @@
+# OTA 后端依赖基准镜像：预下载 Go modules，不含业务二进制。
+# 业务构建可 FROM 此镜像后 COPY 源码再 go build。
+#
+# 构建并推送:
+#   docker build -f Dockerfile.basic -t harbor.map360.cn:30002/ams/ota-backend:basic .
+#   docker push harbor.map360.cn:30002/ams/ota-backend:basic
+
+ARG GO_VERSION=1.22
+ARG DEBIAN_VERSION=bookworm
+ARG GOPROXY=https://goproxy.cn,direct
+ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
+
+FROM golang:${GO_VERSION}-${DEBIAN_VERSION}
+
+ARG GOPROXY
+ARG APT_MIRROR
+ENV GOPROXY=${GOPROXY} \
+    CGO_ENABLED=0 \
+    GOOS=linux
+
+WORKDIR /app
+
+RUN sed -i "s/deb.debian.org/${APT_MIRROR}/g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i "s/deb.debian.org/${APT_MIRROR}/g" /etc/apt/sources.list || true
+
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
